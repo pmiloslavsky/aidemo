@@ -1,0 +1,13 @@
+{
+  "fractal": "Mandelbrot_1000",
+  "max_iterations": [
+    20000,
+    0,
+    0
+  ],
+  "view": {
+    "x_start": -0.7436438870373586,
+    "y_start": 0.131825904205172,
+    "zoom": 1e-13
+  }
+}

@@ -17,3 +17,8 @@ int cuda_generate_buddhabrot_hits(
     std::vector<std::vector<long long unsigned int>> &) {
   return 1;
 }
+
+int cuda_escape_time(const EscapeParams &, unsigned int, unsigned int, unsigned int,
+                     std::vector<EscapeResult> &, const bool *) {
+  return 1;
+}

@@ -1,0 +1,11 @@
+{
+  "fractal": "Mandelbrot_1000",
+  "view": {
+    "x_start": -0.7636438870371587,
+    "y_start": 0.11782590420531201,
+    "zoom": 0.01
+  },
+  "coloring": {
+    "algo": "SHADOW_MAP"
+  }
+}

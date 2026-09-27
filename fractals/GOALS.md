@@ -384,6 +384,31 @@ before moving on.
   forces the CPU path.
 
 ### M6: CUDA Mandelbrot (+ Julia)
+- Done locally. `cuda_escape_time` runs one GPU thread per pixel for a render thread's
+  columns, in column tiles sized from the measured speed (worst case: every pixel to max
+  iterations; target 400 ms per tile). The CPU colors the results with
+  `color_escape_pixel`, the same code as the CPU path. Per-thread CUDA streams;
+  `cudaDeviceScheduleBlockingSync` so waiting threads don't spin.
+- `escape_pow`: integer powers 1–16 use plain complex multiplication on both CPU and GPU
+  (exact IEEE, FMA off in nvcc with `--fmad=false`); other powers use `std::pow`'s formula.
+  With `pow` for z², GPU and CPU differed on 0.01% (full view) up to 63% (zoom 1e-13) of
+  the pixels because CUDA's and MSVC's `log`/`exp` round differently. Now the 7 keys in
+  `tests/benchmark/` match pixel for pixel on CPU and GPU, from the full view to 1e-13.
+  This changes CPU images slightly (in the last bits; at deep zoom they become correct)
+  and makes the CPU 3.6–8.5x faster.
+- The GPU is 1.8–3.5x faster than 23 CPU threads (table in the README), so
+  Mandelbrot_300, Mandelbrot_1000 and Julia now default to `cuda_mode` on. It only takes
+  effect with a working GPU.
+- Found while profiling: the UF16 palette was built with 17 heap allocations per pixel
+  (heap-lock contention across threads; a GPU frame took ~1 s). Now a constant table.
+- `--cuda` / `--no-cuda` options. `save_and_exit` logs the frame time (the slowest
+  thread's slice). Status line: "Cuda Running" only after the GPU has rendered, "Cuda N/A"
+  when there's no GPU or no kernel for the fractal's current settings.
+- `has_gpu_kernel`: the Buddhabrot kernel only does z^2 + c, so the Julia, anti and
+  other-power Buddhabrots now always use the CPU. Before, `c` ran the plain kernel for them
+  and drew the wrong fractal.
+- Interactive check (computer use): Mandelbrot starts "Cuda Running" (~59M samples/s vs
+  8M on the CPU), `c` toggles it, zooming re-renders on the GPU.
 - A new escape-time kernel with one GPU thread per pixel. It runs the same iteration as the
   CPU `getImagePixels` path: the configurable power, the escape radius, and the max
   iterations.

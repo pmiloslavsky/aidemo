@@ -267,7 +267,7 @@ ReferenceFrameInt RI(InteriorColoringAlgo::SOLID, 256,
 
 vector<SupportedFractal> FRAC = {
     {string("Mandelbrot_300"),
-     false,
+     true,  // cuda_mode: GPU when available (M6: same image, faster)
      false,
      false,  // julia
      false,
@@ -282,7 +282,7 @@ vector<SupportedFractal> FRAC = {
      2,
      2},
     {string("Mandelbrot_1000"),
-     false,
+     true,  // cuda_mode: GPU when available (M6: same image, faster)
      false,
      false,  // julia
      false,
@@ -297,7 +297,7 @@ vector<SupportedFractal> FRAC = {
      2,
      2},
     {string("Julia"),
-     false,
+     true,  // cuda_mode: GPU when available (M6: same image, faster)
      false,
      true,  // julia
      false,
@@ -499,6 +499,14 @@ class SavedFractal {
 //   unsigned long long samples_last_second;
 // };
 
+// Ultra Fractal's default palette (UF16). A constant table: building it per
+// pixel (17 heap allocations) made the render threads fight over the heap.
+static const int UF16_MAPPING[16][3] = {
+    {66, 30, 15},    {25, 7, 26},     {9, 1, 47},      {4, 4, 73},
+    {0, 7, 100},     {12, 44, 138},   {24, 82, 177},   {57, 125, 209},
+    {134, 181, 229}, {211, 236, 248}, {241, 233, 191}, {248, 201, 95},
+    {255, 170, 0},   {204, 128, 0},   {153, 87, 0},    {106, 52, 3}};
+
 inline void get_iteration_color(const int iter_ix, const int iters_max,
                                 const complex<double> &zfinal,
                                 complex<double> &derivative, int *p_rcolor,
@@ -565,23 +573,6 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
 
   if (R.palette == tinycolormap::ColormapType::UF16) {
     // Ultra Fractal Default non smooth
-    vector<vector<int>> mapping(16, std::vector<int>(3));
-    mapping[0] = {66, 30, 15};
-    mapping[1] = {25, 7, 26};
-    mapping[2] = {9, 1, 47};
-    mapping[3] = {4, 4, 73};
-    mapping[4] = {0, 7, 100};
-    mapping[5] = {12, 44, 138};
-    mapping[6] = {24, 82, 177};
-    mapping[7] = {57, 125, 209};
-    mapping[8] = {134, 181, 229};
-    mapping[9] = {211, 236, 248};
-    mapping[10] = {241, 233, 191};
-    mapping[11] = {248, 201, 95};
-    mapping[12] = {255, 170, 0};
-    mapping[13] = {204, 128, 0};
-    mapping[14] = {153, 87, 0};
-    mapping[15] = {106, 52, 3};
 
     int i = iter_ix % 16;
     if (R.reflect_palette) {
@@ -589,9 +580,9 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
       if (i >= 16) i = 31 - i;
     }
 
-    *p_rcolor = mapping[i][0];
-    *p_gcolor = mapping[i][1];
-    *p_bcolor = mapping[i][2];
+    *p_rcolor = UF16_MAPPING[i][0];
+    *p_gcolor = UF16_MAPPING[i][1];
+    *p_bcolor = UF16_MAPPING[i][2];
     return;
   }
 
@@ -672,23 +663,6 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
     case InteriorColoringAlgo::MULTICYCLE: {
       if (RI.palette == tinycolormap::ColormapType::UF16) {
         // Ultra Fractal Default non smooth
-        vector<vector<int>> mapping(16, std::vector<int>(3));
-        mapping[0] = {66, 30, 15};
-        mapping[1] = {25, 7, 26};
-        mapping[2] = {9, 1, 47};
-        mapping[3] = {4, 4, 73};
-        mapping[4] = {0, 7, 100};
-        mapping[5] = {12, 44, 138};
-        mapping[6] = {24, 82, 177};
-        mapping[7] = {57, 125, 209};
-        mapping[8] = {134, 181, 229};
-        mapping[9] = {211, 236, 248};
-        mapping[10] = {241, 233, 191};
-        mapping[11] = {248, 201, 95};
-        mapping[12] = {255, 170, 0};
-        mapping[13] = {204, 128, 0};
-        mapping[14] = {153, 87, 0};
-        mapping[15] = {106, 52, 3};
 
         int i = (interior_color_adjust *10 * (int)(distancer + distancei)) % 16;
         if (R.reflect_palette) {
@@ -696,9 +670,9 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
           if (i >= 16) i = 31 - i;
         }
 
-        *p_rcolor = mapping[i][0];
-        *p_gcolor = mapping[i][1];
-        *p_bcolor = mapping[i][2];
+        *p_rcolor = UF16_MAPPING[i][0];
+        *p_gcolor = UF16_MAPPING[i][1];
+        *p_bcolor = UF16_MAPPING[i][2];
         return;
       }
 
@@ -792,6 +766,60 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
   }
 }
 
+// z^power for the Mandelbrot/Julia iteration. Integer powers (the usual z^2)
+// use plain complex multiplication: exact IEEE arithmetic, so it is more
+// accurate at deep zoom than std::pow's exp(p*log z) and gives the same bits
+// as the GPU kernel (pow_int in buddha_cuda_kernel.cu). Other powers use std::pow.
+inline complex<double> escape_pow(const complex<double> &z, double power) {
+  if (power >= 1 && power <= 16 && power == std::floor(power)) {
+    double wr = z.real(), wi = z.imag();
+    for (int k = 1; k < (int)power; ++k) {
+      double r = wr * z.real() - wi * z.imag();
+      double i = wr * z.imag() + wi * z.real();
+      wr = r;
+      wi = i;
+    }
+    return complex<double>(wr, wi);
+  }
+  return pow(z, power);
+}
+
+// Colors one Mandelbrot/Julia pixel from the end of its orbit. Shared by the
+// CPU iteration below and the GPU results (cuda_escape_time).
+void color_escape_pixel(const complex<double> &point, unsigned int iter_ix,
+                        unsigned int iters_max, complex<double> z,
+                        complex<double> derivative, double distancei,
+                        double distancer, int *p_rcolor, int *p_gcolor,
+                        int *p_bcolor, unsigned long long &in,
+                        unsigned long long &out) {
+  if (iter_ix < iters_max)
+    ++out;
+  else
+    ++in;
+
+  if (iter_ix < iters_max) {
+    get_iteration_color(iter_ix, iters_max, z, derivative, p_rcolor, p_gcolor,
+                        p_bcolor);
+  } else {  // set interior set color
+    get_iteration_interior_color(point, z, iters_max, distancei, distancer,
+                                 p_rcolor, p_gcolor, p_bcolor);
+  }
+}
+
+// Fractals that cuda_escape_time can render: the ones getImagePixels hands to
+// mandelbrot_iterations_to_escape
+bool has_escape_kernel(const SupportedFractal &f) {
+  return !f.probabalistic && f.name != "Spiral_Septagon" &&
+         f.name != "Nova_z6+z3-1" && f.name != "Newton_z6+z3-1";
+}
+
+// Whether the current settings of f can run on the GPU. The Buddhabrot kernel
+// only does plain z^2 + c, so Julia, anti and other powers stay on the CPU.
+bool has_gpu_kernel(const SupportedFractal &f) {
+  if (f.probabalistic) return !f.julia && !f.anti && f.current_power == 2;
+  return has_escape_kernel(f);
+}
+
 void mandelbrot_iterations_to_escape(double x, double y, unsigned int iters_max,
                                      int *p_rcolor, int *p_gcolor,
                                      int *p_bcolor, double power,
@@ -811,12 +839,12 @@ void mandelbrot_iterations_to_escape(double x, double y, unsigned int iters_max,
 
   while (abs(z) < (escape_r * escape_r) && iter_ix <= iters_max) {
     if (julia)
-      zn = pow(z, power) + zconst;  // With Julia you dont add Point
+      zn = escape_pow(z, power) + zconst;  // With Julia you dont add Point
     else {
       if (R.color_algo == ColoringAlgo::SHADOW_MAP)
         derivative =
             derivative * complex<double>(2, 0) * z + dc;  // shadow map only
-      zn = pow(z, power) + point;
+      zn = escape_pow(z, power) + point;
     }
     // how far did we travel during orbit
     distancei += (z.imag() - zn.imag()) * (z.imag() - zn.imag());
@@ -826,18 +854,8 @@ void mandelbrot_iterations_to_escape(double x, double y, unsigned int iters_max,
     iter_ix++;
   }
 
-  if (iter_ix < iters_max)
-    ++out;
-  else
-    ++in;
-
-  if (iter_ix < iters_max) {
-    get_iteration_color(iter_ix, iters_max, z, derivative, p_rcolor, p_gcolor,
-                        p_bcolor);
-  } else {  // set interior set color
-    get_iteration_interior_color(point, z, iters_max, distancei, distancer,
-                                 p_rcolor, p_gcolor, p_bcolor);
-  }
+  color_escape_pixel(point, iter_ix, iters_max, z, derivative, distancei,
+                     distancer, p_rcolor, p_gcolor, p_bcolor, in, out);
 }
 
 void spiral_septagon_iterations_to_escape(
@@ -1088,6 +1106,8 @@ void generate_buddhabrot_trail(const complex<double> &c, unsigned int iters_max,
 #define MAX_THREADS 32
 bool thread_asked_to_reset[MAX_THREADS];
 unsigned int thread_iteration[MAX_THREADS];
+// How long each thread took for its last slice of an escape-time frame
+std::atomic<double> thread_frame_ms[MAX_THREADS];
 bool update_and_draw;  // stop using cpu for a bit
 bool save_and_exit;
 bool hide = false;
@@ -1260,12 +1280,16 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
       // Non Probabalistic fractals
       if (FRAC[current_fractal].probabalistic != true) {
+        auto slice_start = chrono::steady_clock::now();
         reset_detected = getImagePixels(R.xstart, R.ystart, R.xdelta, R.ydelta,
                                         tix, p_reset, p_update_and_draw);
         if (reset_detected == true) {
           reset_detected = false;
           // Clear any data generated so far
           for (auto &v : color) v.clear();
+        } else {
+          thread_frame_ms[tix] = chrono::duration<double, milli>(
+              chrono::steady_clock::now() - slice_start).count();
         }
 
         p_iteration[tix]++;
@@ -1277,7 +1301,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       // Probabalistic fractals
 
       if ((FRAC[current_fractal].cuda_mode == true) &&
-          (cuda_detected == true)) {
+          (cuda_detected == true) && has_gpu_kernel(FRAC[current_fractal])) {
         // It we are in cuda mode only allow one thread to do something
         if (tix != 0) continue;
       }
@@ -1286,7 +1310,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       // efficient auto start = chrono::high_resolution_clock::now();
 
       if ((FRAC[current_fractal].cuda_mode == true) &&
-          (cuda_detected == true)) {
+          (cuda_detected == true) && has_gpu_kernel(FRAC[current_fractal])) {
         SampleStats cudastats{0, 0, 0, 0};
         // device kernel doesnt have context of model object or this c file
         if (cuda_generate_buddhabrot_hits(IMAGE_WIDTH, IMAGE_HEIGHT,
@@ -1632,6 +1656,50 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
     unsigned int xe = (tix + 1) * xrange;
     if (tix == num_threads - 1) xe = (unsigned int)R.original_width;
 
+    const SupportedFractal &f = FRAC[current_fractal];
+    if (f.cuda_mode && cuda_detected && has_escape_kernel(f)) {
+      // The GPU computes the orbits of this thread's columns; the coloring
+      // below is the CPU's own, so the look is the same
+      EscapeParams p{xstart, ystart, xdelta, ydelta,
+                     f.current_power, f.current_zconst.real(), f.current_zconst.imag(),
+                     f.current_escape_r, R.light_pos_r, R.light_pos_i,
+                     f.current_max_iters[0], f.julia ? 1 : 0,
+                     R.color_algo == ColoringAlgo::SHADOW_MAP ? 1 : 0};
+      unsigned int h = (unsigned int)R.original_height;
+      thread_local std::vector<EscapeResult> results;
+      int rc = cuda_escape_time(p, xs, xe, h, results, &p_reset[tix]);
+      if (rc == CUDA_ESCAPE_RESET) {
+        p_reset[tix] = false;
+        return true;
+      }
+      if (rc == 0) {
+        // Count locally: all threads updating the shared counters per pixel
+        // fight over one cache line, which made this loop 20x slower
+        unsigned long long in_set = 0, escaped = 0;
+        for (unsigned int i = xs; i < xe; i++) {
+          for (unsigned int j = 0; j < h; j++) {
+            const EscapeResult &e = results[(size_t)(i - xs) * h + j];
+            int rcolor = 0, gcolor = 0, bcolor = 0;
+            color_escape_pixel(complex<double>(xstart + i * xdelta, ystart + j * ydelta),
+                               e.iter, f.current_max_iters[0], complex<double>(e.z_r, e.z_i),
+                               complex<double>(e.d_r, e.d_i), e.dist_i, e.dist_r, &rcolor,
+                               &gcolor, &bcolor, in_set, escaped);
+            color[i][j] = sf::Color(rcolor, gcolor, bcolor);
+          }
+        }
+        stats[current_fractal].in_set += in_set;
+        stats[current_fractal].escaped_set += escaped;
+        stats[current_fractal].total += (unsigned long long)(xe - xs) * h;
+        gpu_rendered = true;
+        hitsums = (unsigned long long)(R.original_width * R.original_height);
+        return false;
+      }
+      // Already logged; this thread and the others carry on with the CPU
+      cout << "CUDA failed, using CPU threads for the rest of this session" << endl;
+      cuda_detected = false;
+    }
+    gpu_rendered = false;
+
     for (unsigned int i = xs; i < xe; i++) {
       for (unsigned int j = 0; j < R.original_height; j++) {
         // see if we should reset
@@ -1849,6 +1917,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
  public:
   unsigned int current_fractal;
   std::atomic<bool> cuda_detected;  // cleared by a render thread if CUDA fails
+  std::atomic<bool> gpu_rendered{false};  // the last escape-time slice came from the GPU
   unsigned int view_width;
   unsigned int view_height;
   unsigned long long maxred = 0;
@@ -2774,12 +2843,18 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   current->setText("Threads: " + to_string(p_model->num_threads));
 
   current = pgui->get<tgui::Label>("cuda_label");
-  if (p_model->cuda_detected == false)
-    current->setText("Cuda N/A");  // no usable GPU, or CUDA failed (see the log)
-  else if (FRAC[p_model->current_fractal].cuda_mode == true)
-    current->setText("Cuda Running");
-  else
-    current->setText("Cuda Off");
+  {
+    const SupportedFractal &f = FRAC[p_model->current_fractal];
+    bool has_kernel = has_gpu_kernel(f);
+    if (p_model->cuda_detected == false || !has_kernel)
+      current->setText("Cuda N/A");  // no usable GPU (see the log), or no kernel for this fractal
+    else if (!f.cuda_mode)
+      current->setText("Cuda Off");
+    else if (f.probabalistic || p_model->gpu_rendered)
+      current->setText("Cuda Running");
+    else
+      current->setText("Cuda Starting");  // switched on, no GPU frame yet
+  }
 
   std::string zoom_string;
   std::ostringstream out;
@@ -2933,6 +3008,9 @@ Options:
   --windowed      open in a window (3/4 of the screen, at the left edge) instead
                   of borderless full screen
   --console       show the log in a console (Windows; on Linux it always prints)
+  --cuda          start with the GPU on for every fractal that has a GPU kernel
+                  (Mandelbrot, Julia, and Buddhabrot with z^2); the c key toggles it
+  --no-cuda       never use the GPU
   -h, --help      show this help and exit
 
 Folders:
@@ -3003,6 +3081,7 @@ int main(int argc, char **argv) {
   bool console = false;
   bool windowed = false;
   bool help = false;
+  int cuda_option = 0;  // +1 --cuda, -1 --no-cuda
   std::string bad_option;
   argList.push_back(argv[0]);
   for (int i = 1; i < argc; ++i) {
@@ -3011,6 +3090,10 @@ int main(int argc, char **argv) {
       console = true;
     else if (arg == "--windowed")
       windowed = true;
+    else if (arg == "--cuda")
+      cuda_option = 1;
+    else if (arg == "--no-cuda")
+      cuda_option = -1;
     else if (arg == "-h" || arg == "--help")
       help = true;
     else if (arg.size() > 1 && arg[0] == '-')
@@ -3153,7 +3236,13 @@ int main(int argc, char **argv) {
       make_shared<FractalModel>(screenDimensions.x, screenDimensions.y);
 
   // p_model->cudaTest();
-  p_model->cudaPresent();
+  if (cuda_option < 0)
+    cout << "CUDA: turned off by --no-cuda, using CPU threads" << endl;
+  else
+    p_model->cudaPresent();
+  if (cuda_option > 0)
+    for (auto &frac : FRAC)
+      if (has_gpu_kernel(frac)) frac.cuda_mode = true;
 
   // Create the worker threads:
   cout << "Machine supports " << thread::hardware_concurrency()
@@ -3450,7 +3539,14 @@ int main(int argc, char **argv) {
         p_model->update(
             elapsed);  // rebuild the pixels from what threads did in background
 
-        cout << "saving " << savename << endl;
+        {
+          // Frame time: the slowest render thread's slice of the last pass
+          double frame_ms = 0;
+          for (unsigned int tix = 0; tix < num_threads; ++tix)
+            frame_ms = std::max(frame_ms, thread_frame_ms[tix].load());
+          cout << "saving " << savename << " (frame " << (int)frame_ms << " ms on "
+               << (p_model->gpu_rendered ? "GPU" : "CPU") << ")" << endl;
+        }
         // save screenshot
         save_screenshot(window, FRAC[p_model->current_fractal].name, modelview,
                         p_model, pgui, false, savename);

@@ -24,3 +24,32 @@ struct cuda_kernel_stats {
   unsigned long long escaped_set;
   unsigned long long total;
 };
+
+// Escape-time fractals (Mandelbrot, Julia) on the GPU
+struct EscapeParams {
+  double xstart, ystart, xdelta, ydelta;  // pixel (i, j) is (xstart + i*xdelta, ystart + j*ydelta)
+  double power;
+  double zconst_r, zconst_i;  // Julia constant
+  double escape_r;
+  double light_r, light_i;  // shadow map light (the derivative's start value)
+  unsigned int iters_max;
+  int julia;       // z starts at the pixel and zconst is added, instead of z = 0 and + pixel
+  int shadow_map;  // track the derivative for SHADOW_MAP coloring
+};
+
+// What the CPU coloring needs for one pixel
+struct EscapeResult {
+  double z_r, z_i;        // final z
+  double d_r, d_i;        // derivative (shadow map)
+  double dist_i, dist_r;  // squared distance travelled by the orbit (interior coloring)
+  unsigned int iter;      // iterations done
+};
+
+const int CUDA_ESCAPE_RESET = -1;
+
+// Computes columns [x0, x1) of a picture h rows high; out[(i - x0) * h + j] is
+// pixel (i, j). Works in short tiles and stops early with CUDA_ESCAPE_RESET
+// when *p_reset turns true. Returns 0, CUDA_ESCAPE_RESET, or a CUDA error
+// code (already logged) after which the caller should stop using CUDA.
+int cuda_escape_time(const EscapeParams &p, unsigned int x0, unsigned int x1, unsigned int h,
+                     std::vector<EscapeResult> &out, const bool *p_reset);

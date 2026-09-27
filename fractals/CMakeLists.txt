@@ -111,7 +111,10 @@ if(FRACTALS_CUDA)
   target_sources(fractals PRIVATE src/buddha_cuda_kernel.cu)
   # cudart comes from CMAKE_CUDA_RUNTIME_LIBRARY=Static; never link the driver
   # library (-lcuda), so the exe still starts on machines without an NVIDIA driver.
-  target_compile_options(fractals PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>)
+  # --fmad=false: no fused multiply-add, like the CPU build, so GPU and CPU images
+  # match. Per-thread default streams let the render threads' tiles run side by side.
+  target_compile_options(fractals PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets --fmad=false --default-stream per-thread>)
   target_compile_definitions(fractals PRIVATE FRACTALS_CUDA=1)
 else()
   target_sources(fractals PRIVATE src/cuda_stub.cpp)

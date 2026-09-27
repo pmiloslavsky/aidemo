@@ -1,5 +1,6 @@
 #include "buddha_cuda_kernel.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -190,6 +191,11 @@ bool cuda_init() {
        << prop.multiProcessorCount << " SMs"
        << (prop.kernelExecTimeoutEnabled ? ", display watchdog on" : "") << endl;
 
+  // Threads waiting for the GPU sleep instead of spinning: with spin-waits the
+  // render threads that wait starve the ones coloring on the CPU. Must be set
+  // before the context exists (cudaFuncGetAttributes below creates it).
+  cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+
   // Fails if the fatbin has no code this GPU can run (older than sm_61)
   cudaFuncAttributes attr;
   err = cudaFuncGetAttributes(&attr, generate_hits_kernel);
@@ -321,6 +327,156 @@ int cuda_generate_buddhabrot_hits(unsigned int w, unsigned int h, SupportedFract
     for (auto &v : *out[c]) v.resize(h);
     for (unsigned int i = 0; i < w; ++i)
       for (unsigned int j = 0; j < h; ++j) (*out[c])[i][j] = host[c][i + j * w];
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Escape-time fractals (Mandelbrot, Julia): one GPU thread per pixel. It runs
+// the same iteration as the CPU's mandelbrot_iterations_to_escape and returns
+// what the CPU coloring needs; the coloring itself stays on the CPU.
+// ---------------------------------------------------------------------------
+
+// z^p exactly as the CPU's escape_pow computes it. Integer powers use plain
+// complex multiplication in the same order, and nvcc's FMA contraction is off
+// (see CMakeLists.txt), so both give the same bits.
+__device__ cuDoubleComplex pow_like_std(cuDoubleComplex z, double p);
+__device__ cuDoubleComplex escape_pow(cuDoubleComplex z, double p) {
+  if (p >= 1 && p <= 16 && p == floor(p)) {
+    double wr = cuCreal(z), wi = cuCimag(z);
+    for (int k = 1; k < (int)p; ++k) {
+      double r = wr * cuCreal(z) - wi * cuCimag(z);
+      double i = wr * cuCimag(z) + wi * cuCreal(z);
+      wr = r;
+      wi = i;
+    }
+    return make_cuDoubleComplex(wr, wi);
+  }
+  return pow_like_std(z, p);
+}
+
+// Other powers: std::pow(complex<double>, double) as MSVC and libstdc++
+// compute it, exp(p * log(z)) with the real-axis special case. The GPU's
+// log/exp/sin/cos round a little differently, so these images can differ
+// slightly at the boundary.
+__device__ cuDoubleComplex pow_like_std(cuDoubleComplex z, double p) {
+  double x = cuCreal(z), y = cuCimag(z);
+  cuDoubleComplex r;
+  if (y == 0.0 && x >= 0.0) {
+    r = make_cuDoubleComplex(pow(x, p), copysign(0.0, p));
+  } else {
+    double log_abs = log(hypot(x, y));
+    double theta = y == 0.0 ? atan2(0.0, x) : atan2(y, x);  // real axis: as for +0
+    double e = exp(p * log_abs);
+    r = make_cuDoubleComplex(e * cos(p * theta), e * sin(p * theta));
+  }
+  if (y == 0.0 && signbit(y)) r = cuConj(r);
+  return r;
+}
+
+__global__ void escape_time_kernel(EscapeResult *out, unsigned int n, unsigned int h,
+                                   unsigned int col0, EscapeParams p) {
+  unsigned int k = threadIdx.x + blockDim.x * blockIdx.x;
+  if (k >= n) return;
+  unsigned int i = col0 + k / h;  // column
+  unsigned int j = k % h;         // row
+  double xi = p.xstart + i * p.xdelta;
+  double yj = p.ystart + j * p.ydelta;
+
+  cuDoubleComplex point = make_cuDoubleComplex(xi, yj);
+  cuDoubleComplex z = p.julia ? point : make_cuDoubleComplex(0, 0);
+  cuDoubleComplex zn = make_cuDoubleComplex(0, 0);
+  cuDoubleComplex dc = make_cuDoubleComplex(p.light_r, p.light_i);
+  cuDoubleComplex derivative = dc;
+  cuDoubleComplex zconst = make_cuDoubleComplex(p.zconst_r, p.zconst_i);
+  cuDoubleComplex two = make_cuDoubleComplex(2, 0);
+  unsigned int iter_ix = 0;
+  double distancei = 0, distancer = 0;
+  double escape = p.escape_r * p.escape_r;
+
+  // hypot, like std::abs on the CPU (cuCabs uses a different formula)
+  while (hypot(cuCreal(z), cuCimag(z)) < escape && iter_ix <= p.iters_max) {
+    if (p.julia) {
+      zn = cuCadd(escape_pow(z, p.power), zconst);  // With Julia you dont add Point
+    } else {
+      if (p.shadow_map) derivative = cuCadd(cuCmul(cuCmul(derivative, two), z), dc);
+      zn = cuCadd(escape_pow(z, p.power), point);
+    }
+    // how far did we travel during orbit
+    distancei += (cuCimag(z) - cuCimag(zn)) * (cuCimag(z) - cuCimag(zn));
+    distancer += (cuCreal(z) - cuCreal(zn)) * (cuCreal(z) - cuCreal(zn));
+    z = zn;
+    iter_ix++;
+  }
+
+  EscapeResult r;
+  r.z_r = cuCreal(z);
+  r.z_i = cuCimag(z);
+  r.d_r = cuCreal(derivative);
+  r.d_i = cuCimag(derivative);
+  r.dist_i = distancei;
+  r.dist_r = distancer;
+  r.iter = iter_ix;
+  out[k] = r;
+}
+
+namespace {
+// Orbit steps per ms, measured; sizes the tiles (shared by the render threads)
+std::atomic<double> escape_steps_per_ms{0};
+const double ESCAPE_TARGET_MS = 400.0;
+
+// Each render thread keeps its own device buffer
+struct EscapeBuffer {
+  EscapeResult *data = nullptr;
+  size_t capacity = 0;
+};
+thread_local EscapeBuffer escape_buffer;
+}  // namespace
+
+int cuda_escape_time(const EscapeParams &p, unsigned int x0, unsigned int x1, unsigned int h,
+                     std::vector<EscapeResult> &out, const bool *p_reset) {
+  size_t total = (size_t)(x1 - x0) * h;
+  out.resize(total);
+  EscapeBuffer &buf = escape_buffer;
+  if (buf.capacity < total) {
+    cudaFree(buf.data);
+    buf.data = nullptr;
+    buf.capacity = 0;
+    cudaError_t err = cudaMalloc(&buf.data, total * sizeof(EscapeResult));
+    if (err != cudaSuccess) return (int)logCudaError(err, "cudaMalloc", __FILE__, __LINE__);
+    buf.capacity = total;
+  }
+
+  // Tiles of whole columns, sized so that even if every pixel runs to max
+  // iterations a launch stays near ESCAPE_TARGET_MS (Windows resets a GPU
+  // that is busy for ~2 s). Starts with one column until there's a measurement.
+  const double worst_steps_per_column = (double)h * ((double)p.iters_max + 1);
+  unsigned int col = x0;
+  while (col < x1) {
+    if (p_reset && *p_reset) return CUDA_ESCAPE_RESET;
+    double rate = escape_steps_per_ms.load();
+    unsigned int cols = 1;
+    if (rate > 0)
+      cols = (unsigned int)std::clamp(ESCAPE_TARGET_MS * rate / worst_steps_per_column, 1.0,
+                                      (double)(x1 - col));
+    unsigned int n = cols * h;
+    size_t offset = (size_t)(col - x0) * h;
+
+    auto start = chrono::steady_clock::now();
+    escape_time_kernel<<<(n + 255) / 256, 256>>>(buf.data + offset, n, h, col, p);
+    cudaError_t err = cudaGetLastError();
+    if (err == cudaSuccess) err = cudaStreamSynchronize(cudaStreamPerThread);
+    if (err != cudaSuccess) return (int)logCudaError(err, "escape_time_kernel", __FILE__, __LINE__);
+    double ms = std::max(0.01, chrono::duration<double, milli>(chrono::steady_clock::now() - start).count());
+
+    err = cudaMemcpy(out.data() + offset, buf.data + offset, n * sizeof(EscapeResult),
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) return (int)logCudaError(err, "cudaMemcpy", __FILE__, __LINE__);
+
+    double steps = 0;
+    for (size_t k = offset; k < offset + n; ++k) steps += out[k].iter;
+    escape_steps_per_ms.store(std::max(1.0, steps) / ms);
+    col += cols;
   }
   return 0;
 }
