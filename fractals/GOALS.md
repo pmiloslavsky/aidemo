@@ -368,7 +368,7 @@ before moving on.
   The app now logs the OpenGL version and texture limit at startup, reports a texture
   failure once, and a failed screenshot logs instead of crashing. CI puts Mesa's llvmpipe
   `opengl32.dll` next to the exe copy (`smoke-test.ps1 -SoftwareGL`; version pinned in
-  `versions.cmake`, unpacked with Windows' own `tar`).
+  `versions.cmake`; unpacked with 7-Zip on the runner, whose `tar` has no LZMA).
 - `-h`/`--help` prints the usage, the folders and the JSON key format (on Windows it
   attaches to the calling console). An unknown option prints the usage and exits with 2;
   it used to be taken as the thread count.

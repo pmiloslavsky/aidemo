@@ -25,8 +25,13 @@ if ($SoftwareGL) {
     }
     $mesa = "$work\mesa"
     New-Item -ItemType Directory $mesa | Out-Null
-    # Windows' own tar (libarchive) reads 7z
-    & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $mesa x64
+    # 7-Zip if installed (CI has it); otherwise Windows 11's tar, which reads
+    # 7z (Windows Server 2022's tar can't: no LZMA)
+    if (Get-Command 7z -ErrorAction SilentlyContinue) {
+        & 7z x $archive "-o$mesa" x64 -y | Out-Null
+    } else {
+        & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $mesa x64
+    }
     if ($LASTEXITCODE -ne 0) { throw "extracting $archive failed" }
     foreach ($dll in 'opengl32.dll', 'libgallium_wgl.dll', 'libglapi.dll') {
         if (Test-Path "$mesa\x64\$dll") { Copy-Item "$mesa\x64\$dll" $work }
