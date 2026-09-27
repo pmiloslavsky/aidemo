@@ -74,6 +74,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fractals-${{ matrix.name }}
-          # Until M3 embeds the assets, the app needs themes/ and escape_image/ next to it.
-          path: fractals/build/${{ matrix.preset }}/bin/
+          # Assets are embedded; the binary is the whole app
+          path: fractals/build/${{ matrix.preset }}/bin/${{ matrix.binary }}
           if-no-files-found: error

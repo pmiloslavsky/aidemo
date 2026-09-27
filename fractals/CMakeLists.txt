@@ -72,10 +72,33 @@ FetchContent_Declare(TGUI
   SYSTEM)
 FetchContent_MakeAvailable(TGUI)
 
+# CMakeRC is a single CMake script; SOURCE_SUBDIR points at a folder without a
+# CMakeLists.txt so only the sources are downloaded (no tests get added).
+FetchContent_Declare(cmrc
+  GIT_REPOSITORY https://github.com/vector-of-bool/cmrc.git
+  GIT_TAG ${FRACTALS_CMRC_GIT_TAG}
+  GIT_SHALLOW ON
+  SOURCE_SUBDIR do-not-add)
+FetchContent_MakeAvailable(cmrc)
+# CMakeRC 2.0.1 asks for CMake 3.3, which CMake 4 refuses (and 3.x warns about)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+include(${cmrc_SOURCE_DIR}/CMakeRC.cmake)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
+
+# Default files built into the exe; extracted into FractalsData/ on first run
+file(GLOB FRACTALS_ASSETS CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/assets/themes/*
+  ${CMAKE_CURRENT_SOURCE_DIR}/assets/escape_images/*)
+cmrc_add_resource_library(fractals_assets
+  NAMESPACE fractals_assets
+  WHENCE assets
+  ${FRACTALS_ASSETS})
+
 # ---------------------------------------------------------------------------
 # The app
 # ---------------------------------------------------------------------------
-add_executable(fractals src/fractals_with_gui_cuda.cpp)
+add_executable(fractals src/fractals_with_gui_cuda.cpp src/runtime.cpp)
+target_link_libraries(fractals PRIVATE fractals_assets)
 
 if(FRACTALS_CUDA)
   target_sources(fractals PRIVATE src/buddha_cuda_kernel.cu)
@@ -93,6 +116,9 @@ target_link_libraries(fractals PRIVATE TGUI::TGUI SFML::Graphics SFML::Window SF
 if(MSVC)
   target_compile_options(fractals PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W3 /utf-8>)
   target_compile_definitions(fractals PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+  # GUI app: no console window (--console opens one). Keep main() as the entry point.
+  set_target_properties(fractals PROPERTIES WIN32_EXECUTABLE TRUE)
+  target_link_options(fractals PRIVATE /ENTRY:mainCRTStartup)
 else()
   target_compile_options(fractals PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -fwrapv>)
   find_package(Threads REQUIRED)
@@ -100,13 +126,3 @@ else()
   # Only glibc, X11, GL and udev stay dynamic (checked by scripts/check-linux-deps.sh)
   target_link_options(fractals PRIVATE -static-libstdc++ -static-libgcc)
 endif()
-
-# Until M3 embeds these, the app loads assets relative to its working
-# directory: stage them next to the exe.
-add_custom_command(TARGET fractals POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-          ${CMAKE_CURRENT_SOURCE_DIR}/assets/themes $<TARGET_FILE_DIR:fractals>/themes
-  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-          ${CMAKE_CURRENT_SOURCE_DIR}/assets/escape_images $<TARGET_FILE_DIR:fractals>/escape_image
-  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:fractals>/screenshots
-  VERBATIM)

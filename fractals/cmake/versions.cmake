@@ -3,6 +3,7 @@
 
 set(FRACTALS_SFML_GIT_TAG 3.1.0)
 set(FRACTALS_TGUI_GIT_TAG v1.13.0)
+set(FRACTALS_CMRC_GIT_TAG 2.0.1)
 
 # CUDA toolkit CI installs, full version (local builds use whatever nvcc is installed, >= 12.0)
 set(FRACTALS_CUDA_CI_VERSION 12.9.1)

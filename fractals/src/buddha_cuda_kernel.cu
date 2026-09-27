@@ -21,7 +21,8 @@ void checkError(cudaError_t code, char const * func, const char *file, const int
     if (code != cudaSuccess) 
     {
         const char * errorMessage = cudaGetErrorString(code);
-        fprintf(stderr, "CUDA error returned from \"%s\" at %s:%d, Error code: %d (%s)\n", func, file, line, code, errorMessage);
+        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
+                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
         if (abort){
             cudaDeviceReset();
             exit(code);
@@ -30,7 +31,8 @@ void checkError(cudaError_t code, char const * func, const char *file, const int
     else if (PRINT_ON_SUCCESS)
     {
         const char * errorMessage = cudaGetErrorString(code);
-        fprintf(stderr, "CUDA error returned from \"%s\" at %s:%d, Error code: %d (%s)\n", func, file, line, code, errorMessage);
+        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
+                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
     }
 }
  
@@ -40,7 +42,8 @@ void checkLastError(char const * func, const char *file, const int line, bool ab
     if (code != cudaSuccess)
     {
         const char * errorMessage = cudaGetErrorString(code);
-        fprintf(stderr, "CUDA error returned from \"%s\" at %s:%d, Error code: %d (%s)\n", func, file, line, code, errorMessage);
+        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
+                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
         if (abort) {
             cudaDeviceReset();
             exit(code);
@@ -49,7 +52,8 @@ void checkLastError(char const * func, const char *file, const int line, bool ab
     else if (PRINT_ON_SUCCESS)
     {
         const char * errorMessage = cudaGetErrorString(code);
-        fprintf(stderr, "CUDA error returned from \"%s\" at %s:%d, Error code: %d (%s)\n", func, file, line, code, errorMessage);
+        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
+                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
     }
 }
 
@@ -68,25 +72,26 @@ void checkLastError(char const * func, const char *file, const int line, bool ab
 using namespace std;
 
 void cudaPrintDeviceProperties(cudaDeviceProp & devProp) {
-    printf("Major revision number:         %d\n",  devProp.major);
-    printf("Minor revision number:         %d\n",  devProp.minor);
-    printf("Name:                          %s\n",  devProp.name);
-    printf("Total global memory:           %llu\n",  devProp.totalGlobalMem);
-    printf("Total shared memory per block: %llu\n",  devProp.sharedMemPerBlock);
-    printf("Total registers per block:     %d\n",  devProp.regsPerBlock);
-    printf("Warp size:                     %d\n",  devProp.warpSize);
-    printf("Maximum memory pitch:          %llu\n",  devProp.memPitch);
-    printf("Maximum threads per block:     %d\n",  devProp.maxThreadsPerBlock);
+    // std::cout rather than printf so the output reaches fractals.log
+    cout << "Major revision number:         " << devProp.major << "\n";
+    cout << "Minor revision number:         " << devProp.minor << "\n";
+    cout << "Name:                          " << devProp.name << "\n";
+    cout << "Total global memory:           " << devProp.totalGlobalMem << "\n";
+    cout << "Total shared memory per block: " << devProp.sharedMemPerBlock << "\n";
+    cout << "Total registers per block:     " << devProp.regsPerBlock << "\n";
+    cout << "Warp size:                     " << devProp.warpSize << "\n";
+    cout << "Maximum memory pitch:          " << devProp.memPitch << "\n";
+    cout << "Maximum threads per block:     " << devProp.maxThreadsPerBlock << "\n";
     for (int i = 0; i < 3; ++i)
-    printf("Maximum dimension %d of block:  %d\n", i, devProp.maxThreadsDim[i]);
+    cout << "Maximum dimension " << i << " of block:  " << devProp.maxThreadsDim[i] << "\n";
     for (int i = 0; i < 3; ++i)
-    printf("Maximum dimension %d of grid:   %d\n", i, devProp.maxGridSize[i]);
-    printf("Clock rate:                    %d\n",  devProp.clockRate);
-    printf("Total constant memory:         %llu\n",  devProp.totalConstMem);
-    printf("Texture alignment:             %llu\n",  devProp.textureAlignment);
-    printf("Concurrent copy and execution: %s\n",  (devProp.deviceOverlap ? "Yes" : "No"));
-    printf("Number of multiprocessors:     %d\n",  devProp.multiProcessorCount);
-    printf("Kernel execution timeout:      %s\n",  (devProp.kernelExecTimeoutEnabled ? "Yes" : "No"));
+    cout << "Maximum dimension " << i << " of grid:   " << devProp.maxGridSize[i] << "\n";
+    cout << "Clock rate:                    " << devProp.clockRate << "\n";
+    cout << "Total constant memory:         " << devProp.totalConstMem << "\n";
+    cout << "Texture alignment:             " << devProp.textureAlignment << "\n";
+    cout << "Concurrent copy and execution: " << (devProp.deviceOverlap ? "Yes" : "No") << "\n";
+    cout << "Number of multiprocessors:     " << devProp.multiProcessorCount << "\n";
+    cout << "Kernel execution timeout:      " << (devProp.kernelExecTimeoutEnabled ? "Yes" : "No") << endl;
 }
 
 int cuda_info() {

@@ -19,6 +19,7 @@
 
 #include "buddha_cuda_kernel.h"
 #include "fractals.h"
+#include "runtime.h"
 #include "tinycolormap.hpp"
 
 // Fractals:
@@ -79,9 +80,10 @@ void signal_callback_handler(int signum) {
   exit(signum);
 }
 
-// For really good pictures
-const int IMAGE_WIDTH = 2560;
-const int IMAGE_HEIGHT = 1440;
+// Render size: the desktop resolution (set in main), or 2560x1440 for
+// save_and_exit so movie frames and CI renders are reproducible
+int IMAGE_WIDTH = 2560;
+int IMAGE_HEIGHT = 1440;
 
 // const int IMAGE_WIDTH = 1600;
 // const int IMAGE_HEIGHT = 1200;
@@ -419,8 +421,9 @@ const int FRACTAL_VERSION{1};
 std::string key_version =
     std::string{"fractal_key_version_"} + to_string(FRACTAL_VERSION);
 
-// Relative to the working directory; the build stages assets next to the exe.
-std::string keys_location = std::string{""};
+// FractalsData/ (see runtime.h); set in main before anything loads or saves
+fs::path data_dir;
+std::string keys_location;
 
 
 // Should be trivially_copyable/serializable
@@ -2353,7 +2356,7 @@ void signalLoadNextKey(shared_ptr<FractalModel> p_model,
   setGuiElementsFromModel(pgui, p_model);
 }
 
-std::string escape_dir = std::string{"escape_image"};
+std::string escape_dir;  // data_dir/escape_images, set in main
 
 int escape_count = 0;
 int escape_ix = -1;
@@ -2864,7 +2867,7 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
   sf::Image screenshot = texture.copyToImage();
   std::string outname = (savename != "none")
                             ? savename
-                            : string{"screenshots"} + separator + name +
+                            : (data_dir / "screenshots").string() + separator + name +
                                   timestring + ".png";
   if (!screenshot.saveToFile(outname))
     cout << "Failed to save screenshot: " << outname << endl;
@@ -2890,41 +2893,68 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  if (argc > 3) {
-    for (auto val : argList) {
-      cout << val << " ";
-    }
-    cout << endl;
+  // Options start with "--" and may appear anywhere; the rest keep their old
+  // positions: [threads] or save_and_exit <key> <png> [hide]
+  bool console = false;
+  bool windowed = false;
+  argList.push_back(argv[0]);
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--console")
+      console = true;
+    else if (arg == "--windowed")
+      windowed = true;
+    else
+      argList.push_back(arg);
+  }
 
-    argList = std::vector<std::string>(argv, argv + argc);
-    // run one iteration using the supplied fractal_key and save the image to
-    // savename and exit in python you can edit the fractal key parameters and
-    // increment the savename and stitch together the images into a movie
-    if (argList[1] == "save_and_exit") {
-      keyname = argList[2];
-      savename = argList[3];
-      save_and_exit = true;
+  if (console) runtime::openConsole();
+  data_dir = runtime::setupDataDir();
+  runtime::startLogging(data_dir / "fractals.log", console);
+  runtime::extractDefaultAssets(data_dir);
+  keys_location = (data_dir / "keys").string() + separator;
+  escape_dir = (data_dir / "escape_images").string();
+  cout << "Data folder: " << data_dir.string() << endl;
 
-      if (argList[4] == "hide") hide = true;
-    }
+  for (auto &val : argList) cout << val << " ";
+  cout << endl;
+
+  // run one iteration using the supplied fractal_key and save the image to
+  // savename and exit in python you can edit the fractal key parameters and
+  // increment the savename and stitch together the images into a movie
+  if (argList.size() > 3 && argList[1] == "save_and_exit") {
+    keyname = argList[2];
+    savename = argList[3];
+    save_and_exit = true;
+
+    if (argList.size() > 4 && argList[4] == "hide") hide = true;
   }
 
   // Register signal and signal handler
   signal(SIGINT, signal_callback_handler);
 
+  if (!save_and_exit) {
+    sf::Vector2u desktop = sf::VideoMode::getDesktopMode().size;
+    IMAGE_WIDTH = (int)desktop.x;
+    IMAGE_HEIGHT = (int)desktop.y;
+  }
+  cout << "Render size: " << IMAGE_WIDTH << "x" << IMAGE_HEIGHT << endl;
+
   sf::Vector2u screenDimensions(IMAGE_WIDTH, IMAGE_HEIGHT);
   sf::RenderWindow window;
-  if (save_and_exit) {
-    window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x, screenDimensions.y)),
-                  "Fractals!", sf::Style::None);  // sf::Style::Fullscreen
-  } else {
-    // Interactive runs open in a 3/4-size window so the rest of the desktop
-    // stays visible. The fractal is still rendered at IMAGE_WIDTH x
-    // IMAGE_HEIGHT and scaled down; the GUI keeps its native pixel size so
-    // text stays readable. F switches to fullscreen.
+  if (windowed && !save_and_exit) {
+    // --windowed: a 3/4-size window at the left edge, so the rest of the
+    // desktop stays visible. The fractal is still rendered at the full size
+    // and scaled down; the GUI keeps its native pixel size so text stays
+    // readable.
     window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x * 3 / 4, screenDimensions.y * 3 / 4)),
                   "Fractals!", sf::Style::Titlebar | sf::Style::Close);
-    window.setPosition(sf::Vector2i(0, 0));  // left edge, leave the right side free
+    window.setPosition(sf::Vector2i(0, 0));
+  } else {
+    // Borderless window covering the whole screen. F switches to exclusive fullscreen.
+    window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x, screenDimensions.y)),
+                  "Fractals!", sf::Style::None);
+    window.setPosition(sf::Vector2i(0, 0));
   }
   if (hide) window.setVisible(false);
 
@@ -2965,13 +2995,17 @@ int main(int argc, char **argv) {
   std::string escape_file2 =
       escape_dir + separator + std::string("escape_image.png");
   // R.color_algo = ColoringAlgo::USE_IMAGE;
-  if ((NSR.escape_texture.loadFromFile(escape_file1.c_str())) ||
-      (NSR.escape_texture.loadFromFile(escape_file1.c_str()))) {
+  std::string loaded;
+  if (NSR.escape_texture.loadFromFile(escape_file1))
+    loaded = escape_file1;
+  else if (NSR.escape_texture.loadFromFile(escape_file2))
+    loaded = escape_file2;
+  if (!loaded.empty()) {
     NSR.escape_image = NSR.escape_texture.copyToImage();
     sf::Vector2u escape_image_dims = NSR.escape_image.getSize();
     R.escape_image_w = escape_image_dims.x;
     R.escape_image_h = escape_image_dims.y;
-    cout << "Loaded escape_image " << escape_file1.c_str()
+    cout << "Loaded escape_image " << loaded
          << " Dims: " << R.escape_image_w << " " << R.escape_image_h << endl;
     R.image_loaded = true;
   } else {
@@ -3001,8 +3035,8 @@ int main(int argc, char **argv) {
        << " simultaneous threads" << endl;
 
   unsigned int cmd_line_threads;
-  if (argc > 1)
-    cmd_line_threads = atoi(argv[1]);
+  if (argList.size() > 1)
+    cmd_line_threads = atoi(argList[1].c_str());
   else
     cmd_line_threads = thread::hardware_concurrency() - 1;
   unsigned int num_threads = 1;
@@ -3033,7 +3067,7 @@ int main(int argc, char **argv) {
   bool display_gui = true;
   bool display_fractal = true;
   auto pgui = make_shared<tgui::Gui>(window);
-  tgui::Theme::setDefault("themes/Black.txt");
+  tgui::Theme::setDefault((data_dir / "themes" / "Black.txt").string());
   createGuiElements(pgui, p_model);
   updateGuiElements(pgui, p_model);
 

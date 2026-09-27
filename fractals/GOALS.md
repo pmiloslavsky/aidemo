@@ -211,10 +211,9 @@ before moving on.
 - Paths are temporarily relative to the working directory (assets staged next to the exe)
   until M3.
 - Visible TGUI 1.13 difference: the interior-coloring list box now shows a scrollbar.
-- Interactive runs open in a 1920x1080 window at the left edge of the screen, so the
-  rest of the desktop stays visible. The fractal still renders at 2560x1440 and is scaled
-  down; mouse coordinates are mapped back. `F` switches to fullscreen. `save_and_exit`
-  keeps the full-size borderless window, so its renders don't change.
+- Interactive runs with `--windowed` (see M3) open a 3/4-size window at the left edge of
+  the screen, so the rest of the desktop stays visible. The fractal still renders at full
+  size and is scaled down; mouse coordinates are mapped back.
 - GUI testing uses computer use. A per-user Start-menu shortcut "Fractals" makes the dev
   exe grantable. Before each key, click the canvas and wait 1 s.
 - CUDA Buddhabrot checked interactively on the RTX 5070: `c` switches to "Cuda Running"
@@ -261,7 +260,32 @@ before moving on.
 - **Verify:** both jobs are green; `ldd` on the Linux binary shows only system libraries.
   The first push needs your approval.
 
-### M3: Self-contained runtime
+### M3: Self-contained runtime ✅
+- Done. `src/runtime.{h,cpp}` picks the data folder: `FractalsData` next to the exe
+  (`GetModuleFileNameW` / `/proc/self/exe` / `$APPIMAGE`), or the per-user folder when the
+  exe's folder isn't writable (checked by writing a probe file). CMakeRC 2.0.1 embeds
+  `assets/themes` and `assets/escape_images`; files already on disk are never overwritten.
+  The themes use TGUI's built-in font, so there is no font file to embed.
+- Keys (still the old binary format until M4) go to `FractalsData/keys/fractal_key_version_1/`.
+  `save_and_exit` still takes key and PNG paths relative to the working directory.
+- Window: borderless at the desktop resolution by default; `--windowed` opens the
+  3/4-size window at the left edge (the Start-menu test shortcut passes it). `save_and_exit`
+  always renders at 2560x1440 so frames are reproducible.
+- Windows builds as a GUI app (`WIN32_EXECUTABLE`, `/ENTRY:mainCRTStartup`), so there is no
+  console. `std::cout`/`std::cerr` go to `fractals.log`, and also to the console on Linux and
+  with `--console` on Windows. The CUDA host code's `printf`s became `std::cout` so they
+  reach the log. The one device-side `printf` (max iterations) is left for M5.
+- CMake 4 rejects CMakeRC's `cmake_minimum_required(3.3)`, so `CMAKE_POLICY_VERSION_MINIMUM`
+  is set to 3.5 around its include.
+- Also fixed: `save_and_exit` read `argv[4]` when only 4 args were passed.
+- Verified: the lone exe in an empty folder creates `FractalsData/` with all 15 files and
+  a log with the GPU info; a user-edited theme file survives a restart; with the folder
+  made unwritable (icacls deny) it uses `%LOCALAPPDATA%\Fractals`; the Linux build does
+  the same from `/proc/self/exe` (WSLg). Interactive (computer use): the theme loads, `N`
+  cycles escape images including the PNG, `S` writes to `FractalsData/screenshots/`.
+- Not verified: `--console` on Windows (the test shell has no real console).
+- SFML opens the X11 display during static initialization, so on Linux the app aborts
+  before `main` without a display. The M5 CI smoke test needs `xvfb`.
 - `FractalsData/` next to the exe, resolved from the exe path, with the per-user fallback
   when the folder isn't writable.
 - CMakeRC embeds the themes, font and all escape images; missing files are extracted on
