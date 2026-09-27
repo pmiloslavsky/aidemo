@@ -29,11 +29,36 @@
       "name": "windows-release-cpu-only",
       "inherits": "windows-release",
       "cacheVariables": { "FRACTALS_CUDA": "OFF" }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++" }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-release-cpu-only",
+      "inherits": "linux-release",
+      "cacheVariables": { "FRACTALS_CUDA": "OFF" }
     }
   ],
   "buildPresets": [
     { "name": "windows-release", "configurePreset": "windows-release" },
     { "name": "windows-debug", "configurePreset": "windows-debug" },
-    { "name": "windows-release-cpu-only", "configurePreset": "windows-release-cpu-only" }
+    { "name": "windows-release-cpu-only", "configurePreset": "windows-release-cpu-only" },
+    { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-debug", "configurePreset": "linux-debug" },
+    { "name": "linux-release-cpu-only", "configurePreset": "linux-release-cpu-only" }
   ]
 }

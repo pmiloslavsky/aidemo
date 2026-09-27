@@ -232,7 +232,21 @@ before moving on.
   system DLLs. The app runs on the RTX 5070, and a `save_and_exit` render matches the old
   build.
 
-### M2: CI early (Windows + Linux build only)
+### M2: CI early (Windows + Linux build only) — in progress
+- Local status: `linux-release-cpu-only` builds in WSL Ubuntu 26.04 (GCC 15) with no
+  source changes (the M1 port already fixed the GCC issues). `readelf -d` shows only
+  X11, Xrandr, Xcursor, Xi, udev, libm, libc and the loader. `scripts/check-linux-deps.sh`
+  fails the build if anything else shows up.
+- Linux fixes: `SFML_USE_SYSTEM_DEPS OFF` (SFML defaults to the system FreeType on
+  Linux) and a FreeType → HarfBuzz link so GNU ld resolves their circular dependency.
+  `-static-libstdc++ -static-libgcc`; the static-std-lib options are Windows-only.
+- CI CUDA: `FRACTALS_CUDA_CI_VERSION` is now the full version (12.9.1), which the Windows
+  network installer URL needs. Windows installs `nvcc nvvm crt cudart curand_dev`
+  (`scripts/install-cuda-ci.ps1`); Linux installs `cuda-nvcc`, `cuda-cudart-dev` and
+  `libcurand-dev` from NVIDIA's apt repo.
+- Build cache: the whole `build/<preset>` folder, keyed by the versions/CMake files plus
+  the commit, restored from the newest matching entry.
+
 - `scripts/setup-linux.sh`, `scripts/build-linux.sh`, Linux presets.
 - `.github/workflows/fractals.yml`: `windows-2022` + `ubuntu-22.04`, CUDA 12.9 installed
   in CI only, build caching, artifacts uploaded.

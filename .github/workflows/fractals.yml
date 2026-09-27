@@ -1,0 +1,79 @@
+name: fractals
+
+# Builds the Windows and Linux binaries. All build logic lives in
+# fractals/scripts and fractals/CMakePresets.json, the same as local builds.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'fractals/**'
+      - '.github/workflows/fractals.yml'
+  pull_request:
+    paths:
+      - 'fractals/**'
+      - '.github/workflows/fractals.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: fractals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-2022
+            preset: windows-release
+            binary: fractals.exe
+          - name: linux
+            os: ubuntu-22.04
+            preset: linux-release
+            binary: fractals
+    defaults:
+      run:
+        working-directory: fractals
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # FetchContent sources and their object files. Keyed per commit so every
+      # run saves a fresh copy; restore-keys picks the newest one with the same
+      # pinned versions, so only changed files rebuild.
+      - name: Cache dependency builds
+        uses: actions/cache@v4
+        with:
+          path: fractals/build/${{ matrix.preset }}
+          key: build-${{ matrix.preset }}-${{ hashFiles('fractals/cmake/versions.cmake', 'fractals/CMakeLists.txt', 'fractals/CMakePresets.json') }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ matrix.preset }}-${{ hashFiles('fractals/cmake/versions.cmake', 'fractals/CMakeLists.txt', 'fractals/CMakePresets.json') }}-
+
+      - name: Setup (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/setup-windows.ps1 -InstallCuda
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Preset ${{ matrix.preset }}
+
+      - name: Setup (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/setup-linux.sh --install-cuda
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/build-linux.sh ${{ matrix.preset }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fractals-${{ matrix.name }}
+          # Until M3 embeds the assets, the app needs themes/ and escape_image/ next to it.
+          path: fractals/build/${{ matrix.preset }}/bin/
+          if-no-files-found: error

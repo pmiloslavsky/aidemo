@@ -39,17 +39,28 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 set(SFML_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
 set(SFML_BUILD_NETWORK OFF CACHE BOOL "" FORCE)
-set(SFML_USE_STATIC_STD_LIBS ON CACHE BOOL "" FORCE)
+# Build FreeType etc. from source and link them in (SFML defaults to the
+# system copies on Linux, which would add shared-library dependencies)
+set(SFML_USE_SYSTEM_DEPS OFF CACHE BOOL "" FORCE)
+if(WIN32)
+  set(SFML_USE_STATIC_STD_LIBS ON CACHE BOOL "" FORCE)
+  set(TGUI_USE_STATIC_STD_LIBS ON CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(SFML
   GIT_REPOSITORY https://github.com/SFML/SFML.git
   GIT_TAG ${FRACTALS_SFML_GIT_TAG}
   GIT_SHALLOW ON
   SYSTEM)
 FetchContent_MakeAvailable(SFML)
+# SFML's bundled FreeType and HarfBuzz need each other, but SFML leaves out the
+# FreeType -> HarfBuzz link. MSVC doesn't care; GNU ld needs HarfBuzz repeated
+# after FreeType, which CMake does once the cycle is declared.
+if(TARGET freetype AND TARGET harfbuzz AND NOT MSVC)
+  target_link_libraries(freetype INTERFACE harfbuzz)
+endif()
 
 set(TGUI_BACKEND SFML_GRAPHICS CACHE STRING "" FORCE)
 set(TGUI_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(TGUI_USE_STATIC_STD_LIBS ON CACHE BOOL "" FORCE)
 set(TGUI_BUILD_GUI_BUILDER OFF CACHE BOOL "" FORCE)
 set(TGUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(TGUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -86,6 +97,8 @@ else()
   target_compile_options(fractals PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -fwrapv>)
   find_package(Threads REQUIRED)
   target_link_libraries(fractals PRIVATE Threads::Threads)
+  # Only glibc, X11, GL and udev stay dynamic (checked by scripts/check-linux-deps.sh)
+  target_link_options(fractals PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 # Until M3 embeds these, the app loads assets relative to its working
