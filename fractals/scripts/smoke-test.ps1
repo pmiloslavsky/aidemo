@@ -1,4 +1,4 @@
-# Renders tests/smoke/*.json with save_and_exit and checks the output. The exe
+# Renders tests/smoke/*.json with --save-and-exit and checks the output. The exe
 # is copied into an empty folder first, so this also covers first-run setup
 # (FractalsData/, extracted assets, log) and, on a machine without an NVIDIA
 # driver, the CPU fallback.
@@ -46,7 +46,7 @@ try {
         $name = $key.BaseName
         Copy-Item $key.FullName "$work\$name.json"
         Write-Host "=== $name"
-        $p = Start-Process "$work\fractals.exe" -ArgumentList 'save_and_exit', "$name.json", "$name.png", 'hide' `
+        $p = Start-Process "$work\fractals.exe" -ArgumentList '--save-and-exit', "$name.json", "$name.png", '--hide' `
             -WorkingDirectory $work -PassThru
         if (-not $p.WaitForExit(300000)) { $p.Kill(); Write-Host "FAIL: timed out"; $ok = $false }
         elseif ($p.ExitCode -ne 0) { Write-Host "FAIL: exit code $($p.ExitCode)"; $ok = $false }

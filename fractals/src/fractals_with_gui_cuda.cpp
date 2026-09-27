@@ -106,7 +106,7 @@ void signal_callback_handler(int signum) {
 }
 
 // Render size: the desktop resolution (set in main), or 2560x1440 for
-// save_and_exit so movie frames and CI renders are reproducible
+// --save-and-exit so movie frames and CI renders are reproducible
 int IMAGE_WIDTH = 2560;
 int IMAGE_HEIGHT = 1440;
 
@@ -2374,7 +2374,7 @@ bool readKey(const fs::path &filename, SavedFractal &s) {
   return keyFromJson(j, s);
 }
 
-// Saves the current fractal. infname (no extension) is used by save_and_exit;
+// Saves the current fractal. infname (no extension) is used by --save-and-exit;
 // otherwise the key goes to FractalsData/keys/<fractal>_<crc>.json.
 void signalSaveKey(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui,
                    std::string infname = "") {
@@ -2421,7 +2421,7 @@ void LoadLast(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui) {
   setGuiElementsFromModel(pgui, p_model);
 }
 
-// save_and_exit: returns non-zero if the key can't be loaded
+// --save-and-exit: returns non-zero if the key can't be loaded
 int LoadProvidedKey(shared_ptr<FractalModel> p_model,
                     shared_ptr<tgui::Gui> pgui, std::string keyname) {
   updateGuiElements(pgui, p_model);
@@ -2991,18 +2991,9 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
     cout << "Failed to save screenshot: " << outname << endl;
 };
 
-const char *usage_text = R"(Usage: fractals [options] [threads]
-       fractals [options] save_and_exit <key.json> <out.png> [hide]
+const char *usage_text = R"(Usage: fractals [options]
 
 Interactive fractal explorer: Mandelbrot, Julia, Buddhabrot, Newton, Nova, ...
-
-Arguments:
-  threads         number of render threads (default: CPU threads - 1)
-  save_and_exit <key.json> <out.png>
-                  render the fractal key (JSON) at 2560x1440, save the image as
-                  out.png, write the key it rendered to changed_key.json, and exit.
-                  Paths are relative to the current folder.
-  hide            with save_and_exit: keep the window hidden while rendering
 
 Options:
   --windowed      open in a window (3/4 of the screen, at the left edge) instead
@@ -3011,7 +3002,16 @@ Options:
   --cuda          start with the GPU on for every fractal that has a GPU kernel
                   (Mandelbrot, Julia, and Buddhabrot with z^2); the c key toggles it
   --no-cuda       never use the GPU
+  --threads <n>   number of render threads (default: CPU threads - 1, at most 32)
+  --save-and-exit <key.json> <out.png>
+                  render the fractal key (JSON) at 2560x1440, save the image as
+                  out.png, write the key it rendered to changed_key.json, and exit.
+                  Paths are relative to the current folder.
+  --hide          with --save-and-exit: keep the window hidden while rendering
   -h, --help      show this help and exit
+
+Example:
+  fractals --save-and-exit my_key.json my_key.png --hide
 
 Folders:
   FractalsData/ is created next to the executable. If that folder isn't
@@ -3076,16 +3076,24 @@ int main(int argc, char **argv) {
   save_and_exit = false;
   hide = false;
 
-  // Options start with "-" and may appear anywhere; the rest keep their old
-  // positions: [threads] or save_and_exit <key> <png> [hide]
   bool console = false;
   bool windowed = false;
   bool help = false;
   int cuda_option = 0;  // +1 --cuda, -1 --no-cuda
-  std::string bad_option;
-  argList.push_back(argv[0]);
-  for (int i = 1; i < argc; ++i) {
+  unsigned int requested_threads = 0;  // 0: one per CPU thread, minus one
+  std::string error;
+  for (int i = 1; i < argc && error.empty(); ++i) {
     std::string arg = argv[i];
+    argList.push_back(arg);
+    // The option's value(s): the next argument(s), which must exist
+    auto value = [&](const char *what) -> std::string {
+      if (i + 1 >= argc) {
+        error = arg + " needs " + what;
+        return "";
+      }
+      argList.push_back(argv[i + 1]);
+      return argv[++i];
+    };
     if (arg == "--console")
       console = true;
     else if (arg == "--windowed")
@@ -3094,20 +3102,34 @@ int main(int argc, char **argv) {
       cuda_option = 1;
     else if (arg == "--no-cuda")
       cuda_option = -1;
-    else if (arg == "-h" || arg == "--help")
+    else if (arg == "--hide")
+      hide = true;
+    else if (arg == "--threads") {
+      std::string n = value("a number");
+      char *end = nullptr;
+      long v = error.empty() ? std::strtol(n.c_str(), &end, 10) : 0;
+      if (error.empty() && (n.empty() || *end != '\0' || v < 1))
+        error = "--threads needs a number of 1 or more, not \"" + n + "\"";
+      requested_threads = (unsigned int)std::max(0L, v);
+    } else if (arg == "--save-and-exit") {
+      keyname = value("a key file and an output PNG");
+      if (error.empty()) savename = value("an output PNG after the key file");
+      save_and_exit = error.empty();
+    } else if (arg == "-h" || arg == "--help")
       help = true;
     else if (arg.size() > 1 && arg[0] == '-')
-      bad_option = arg;
+      error = "unknown option: " + arg;
     else
-      argList.push_back(arg);
+      error = "unexpected argument: " + arg;
   }
+  if (error.empty() && hide && !save_and_exit) error = "--hide only works with --save-and-exit";
 
-  if (help || !bad_option.empty()) {
+  if (help || !error.empty()) {
     runtime::openConsole();  // the Windows exe has no console of its own
-    if (!bad_option.empty()) cout << "unknown option: " << bad_option << "\n\n";
+    if (!error.empty()) cout << error << "\n\n";
     cout << usage_text;
     cout.flush();
-    return bad_option.empty() ? 0 : 2;
+    return error.empty() ? 0 : 2;
   }
 
   if (console) runtime::openConsole();
@@ -3118,19 +3140,11 @@ int main(int argc, char **argv) {
   escape_dir = (data_dir / "escape_images").string();
   cout << "Data folder: " << data_dir.string() << endl;
 
-  for (auto &val : argList) cout << val << " ";
+  cout << "Command line: " << argv[0];
+  for (auto &val : argList) cout << " " << val;
   cout << endl;
-
-  // run one iteration using the supplied fractal_key and save the image to
-  // savename and exit in python you can edit the fractal key parameters and
-  // increment the savename and stitch together the images into a movie
-  if (argList.size() > 3 && argList[1] == "save_and_exit") {
-    keyname = argList[2];
-    savename = argList[3];
-    save_and_exit = true;
-
-    if (argList.size() > 4 && argList[4] == "hide") hide = true;
-  }
+  // --save-and-exit renders one key, saves the image and exits; the movie
+  // script edits keys and calls it once per frame
 
   // Register signal and signal handler
   signal(SIGINT, signal_callback_handler);
@@ -3248,17 +3262,11 @@ int main(int argc, char **argv) {
   cout << "Machine supports " << thread::hardware_concurrency()
        << " simultaneous threads" << endl;
 
-  unsigned int cmd_line_threads;
-  if (argList.size() > 1)
-    cmd_line_threads = atoi(argList[1].c_str());
-  else
-    cmd_line_threads = thread::hardware_concurrency() - 1;
-  unsigned int num_threads = 1;
-  if ((cmd_line_threads <= 0) ||
-      (cmd_line_threads >= thread::hardware_concurrency() - 1))
-    num_threads = thread::hardware_concurrency() - 1;
-  else
-    num_threads = cmd_line_threads;
+  // --threads, or one per CPU thread minus one for the GUI; at most MAX_THREADS
+  // (the per-thread arrays' size)
+  unsigned int hw_threads = std::max(2u, thread::hardware_concurrency());
+  unsigned int num_threads = requested_threads ? requested_threads : hw_threads - 1;
+  num_threads = std::min<unsigned int>(num_threads, MAX_THREADS);
   p_model->num_threads = num_threads;
 
   cout << "Using " << num_threads << " threads to speed up fractal rendering"

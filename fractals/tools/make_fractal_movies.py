@@ -3,7 +3,7 @@
 
 Each frame zooms in a little and moves the light, starting from a seed key
 saved with the app's "Save Key" button (FractalsData/keys/*.json). The app
-renders every frame with:  fractals save_and_exit <frame key> <png> hide
+renders every frame with:  fractals --save-and-exit <frame key> <png> --hide
 and writes the key it actually rendered to changed_key.json, which seeds the
 next frame.
 
@@ -66,7 +66,7 @@ def create_evolved_frames(args):
         write_key(os.path.join(args.out, frame_key), key)
         print("Rendering frame {}/{}: {}".format(j + 1, count, frame_key))
         # Run inside the output folder: the app writes changed_key.json there
-        result = subprocess.run([args.exe, "save_and_exit", frame_key, png, "hide"], cwd=args.out)
+        result = subprocess.run([args.exe, "--save-and-exit", frame_key, png, "--hide"], cwd=args.out)
         if result.returncode != 0 or not os.path.exists(os.path.join(args.out, png)):
             sys.exit("frame {} failed (exit code {})".format(j, result.returncode))
 

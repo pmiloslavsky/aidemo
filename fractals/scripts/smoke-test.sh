@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders tests/smoke/*.json with save_and_exit and checks the output. The
+# Renders tests/smoke/*.json with --save-and-exit and checks the output. The
 # binary is copied into an empty folder first, so this also covers first-run
 # setup (FractalsData/, extracted assets, log) and, on a machine without an
 # NVIDIA driver, the CPU fallback. Uses xvfb when there is no display.
@@ -23,7 +23,7 @@ for key in "$root"/tests/smoke/*.json; do
   cp "$key" "$work/$name.json"
   echo "=== $name"
   rc=0
-  (cd "$work" && timeout 300 "${run[@]}" ./fractals save_and_exit "$name.json" "$name.png" hide) || rc=$?
+  (cd "$work" && timeout 300 "${run[@]}" ./fractals --save-and-exit "$name.json" "$name.png" --hide) || rc=$?
   if [ "$rc" -ne 0 ]; then echo "FAIL: exit code $rc"; status=1; fi
   if [ -s "$work/$name.png" ]; then echo "ok   $name.png ($(stat -c %s "$work/$name.png") bytes)"
   else echo "FAIL: no $name.png"; status=1; fi

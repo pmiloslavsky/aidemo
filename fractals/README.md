@@ -63,18 +63,28 @@ stores the current view as a JSON key; **Load Next Key** steps through the saved
 
 ## Command line
 
-`fractals --help` lists everything, including the JSON key format. The main options:
+`fractals --help` lists the options, the data folders and the JSON key format.
 
 | Option | |
 |---|---|
-| `--windowed` | a window instead of borderless full screen |
-| `--console` | show the log in a console (Windows) |
-| `--cuda` / `--no-cuda` | start with the GPU on for every fractal that supports it / never use the GPU |
-| `save_and_exit <key.json> <out.png> [hide]` | render a key to a PNG at 2560x1440 and exit |
-| `[threads]` | number of render threads |
+| `--windowed` | a window (3/4 of the screen) instead of borderless full screen |
+| `--console` | show the log in a console (Windows; Linux always prints it) |
+| `--cuda` | start with the GPU on for every fractal that supports it |
+| `--no-cuda` | never use the GPU |
+| `--threads <n>` | number of render threads (default: CPU threads − 1, at most 32) |
+| `--save-and-exit <key.json> <out.png>` | render a key at 2560x1440, save it as a PNG and exit |
+| `--hide` | with `--save-and-exit`: keep the window hidden |
+| `-h`, `--help` | show the help |
 
-`tools/make_fractal_movies.py` uses `save_and_exit` to turn a key into an animated GIF
-and MP4s (zooming in while the light moves).
+For example, to render a saved key without showing a window:
+
+```bash
+fractals --save-and-exit FractalsData/keys/my_key.json my_key.png --hide
+```
+
+`--save-and-exit` also writes the key it rendered to `changed_key.json` in the current
+folder. `tools/make_fractal_movies.py` uses it to turn a key into an animated GIF and
+MP4s (zooming in while the light moves).
 
 ## Building from source
 
@@ -116,7 +126,7 @@ the keys in `tests/smoke/` as a quick check. GitHub Actions builds both on every
 
 Measured at 2560x1440 on an AMD Ryzen 9 9900X (12 cores, 23 render threads) and an
 NVIDIA RTX 5070, Windows 11, release build. "Frame" is the time the slowest render thread
-takes for its slice of the picture, from `save_and_exit` (see the log). The keys are in
+takes for its slice of the picture, from `--save-and-exit` (see the log). The keys are in
 `tests/benchmark/`; each was rendered with `--no-cuda` and `--cuda`.
 
 | View | Max iterations | CPU | GPU | GPU speedup |

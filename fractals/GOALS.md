@@ -74,7 +74,7 @@ touched.
 - **Dependencies:** SFML, TGUI and the other libraries download as source into the build
   folder through `FetchContent`, not into the system.
 - **Testing:** build, run the exe, and verify rendering by having the app save PNGs in
-  `save_and_exit` mode. Covers both the CUDA and CPU paths.
+  `--save-and-exit` mode. Covers both the CUDA and CPU paths.
 - **Linux:** the release binaries are built only by CI on `ubuntu-22.04`. Optionally, a
   CPU-only smoke build can run in the existing WSL Ubuntu-26.04. That only apt-installs
   inside WSL, never CUDA, and nothing on Windows.
@@ -105,7 +105,8 @@ FractalsData/
   back to the per-user data dir.
   - Windows: `%LOCALAPPDATA%\Fractals`.
   - Linux: `$XDG_DATA_HOME/fractals`, or `~/.local/share/fractals` if that isn't set.
-- The command-line `save_and_exit` mode (used by `make_fractal_movies.py`) keeps working
+- The command-line `--save-and-exit` mode (used by `make_fractal_movies.py`; it was
+  `save_and_exit <key> <png> [hide]` until M7) keeps working
   with the same folder layout.
 
 ## Fractal keys: JSON
@@ -229,7 +230,7 @@ before moving on.
 - Port the code to SFML 3.1 / TGUI 1.13 (fix deprecations).
 - Themes and escape image still loaded from disk, as before (M2 changes that).
 - **Verify:** builds with the tools already installed. `dumpbin /dependents` shows only
-  system DLLs. The app runs on the RTX 5070, and a `save_and_exit` render matches the old
+  system DLLs. The app runs on the RTX 5070, and a `--save-and-exit` render matches the old
   build.
 
 ### M2: CI early (Windows + Linux build only) ✅
@@ -268,9 +269,9 @@ before moving on.
   `assets/themes` and `assets/escape_images`; files already on disk are never overwritten.
   The themes use TGUI's built-in font, so there is no font file to embed.
 - Keys (still the old binary format until M4) go to `FractalsData/keys/fractal_key_version_1/`.
-  `save_and_exit` still takes key and PNG paths relative to the working directory.
+  `--save-and-exit` still takes key and PNG paths relative to the working directory.
 - Window: borderless at the desktop resolution by default; `--windowed` opens the
-  3/4-size window at the left edge (the Start-menu test shortcut passes it). `save_and_exit`
+  3/4-size window at the left edge (the Start-menu test shortcut passes it). `--save-and-exit`
   always renders at 2560x1440 so frames are reproducible.
 - Windows builds as a GUI app (`WIN32_EXECUTABLE`, `/ENTRY:mainCRTStartup`), so there is no
   console. `std::cout`/`std::cerr` go to `fractals.log`, and also to the console on Linux and
@@ -278,7 +279,7 @@ before moving on.
   reach the log. The one device-side `printf` (max iterations) is left for M5.
 - CMake 4 rejects CMakeRC's `cmake_minimum_required(3.3)`, so `CMAKE_POLICY_VERSION_MINIMUM`
   is set to 3.5 around its include.
-- Also fixed: `save_and_exit` read `argv[4]` when only 4 args were passed.
+- Also fixed: `--save-and-exit` read `argv[4]` when only 4 args were passed.
 - Verified: the lone exe in an empty folder creates `FractalsData/` with all 15 files and
   a log with the GPU info; a user-edited theme file survives a restart; with the folder
   made unwritable (icacls deny) it uses `%LOCALAPPDATA%\Fractals`; the Linux build does
@@ -322,7 +323,7 @@ before moving on.
 - One capture/apply helper replaces the four copies of the load code. Also fixed:
   the palette list showed Hot and Turbo swapped (list order didn't match the enum), and
   the in-memory "Save Fractal" list could write one past its end.
-- `save_and_exit` writes `changed_key.json` (was `changed_key.fractal_key_version_1`).
+- `--save-and-exit` writes `changed_key.json` (was `changed_key.fractal_key_version_1`).
 - `tools/make_fractal_movies.py`: JSON keys; finds the exe in `build/*-release*/bin`
   (or `--exe`); `--key`, `--out`, `--frames-only`, `--keep-frames`; no `shell=True`, so it
   runs on Linux; frames sorted by number. Pillow and moviepy are needed only for the
@@ -348,7 +349,7 @@ before moving on.
   too old for CUDA 12, or no kernel for the GPU (checked with `cudaFuncGetAttributes`).
   CUDA errors are logged and returned instead of calling `exit()`. The render thread then
   turns CUDA off for the session and restores the CPU hit buffers. Detection now also runs
-  in `save_and_exit`, which only matters for Buddhabrot until M6. The status line shows
+  in `--save-and-exit`, which only matters for Buddhabrot until M6. The status line shows
   "Cuda N/A" when there is no usable GPU.
 - Kernel: the `trail[10000]` array (160 KB of local memory per thread) and its 10000
   iteration cap are gone. Each orbit is iterated twice instead (test, then plot); only
@@ -365,7 +366,7 @@ before moving on.
   is copied into an empty folder and renders the key; the test checks the PNG,
   `changed_key.json`, the log's CUDA line and the extracted assets. It passes locally on
   Windows with and without `CUDA_VISIBLE_DEVICES=-1`, and on Linux (WSL, CPU-only build).
-  Only a Mandelbrot key: in `save_and_exit`, probabilistic fractals never count as done.
+  Only a Mandelbrot key: in `--save-and-exit`, probabilistic fractals never count as done.
 - CI Windows has no GPU, so only Windows' OpenGL 1.1 (textures up to 1024x1024): the 2560x1440
   texture failed and saving the screenshot threw an uncaught exception (exit 0xC0000409).
   The app now logs the OpenGL version and texture limit at startup, reports a texture
@@ -378,7 +379,7 @@ before moving on.
 - Not tested: a real CUDA failure in the middle of a session.
 - A missing driver, no NVIDIA GPU or a CUDA error falls back to CPU threads with a log
   message instead of crashing.
-- CI smoke test: the no-GPU runners run `save_and_exit` headless (Linux under `xvfb`)
+- CI smoke test: the no-GPU runners run `--save-and-exit` headless (Linux under `xvfb`)
   and check that a PNG comes out. That exercises the no-driver path for real.
 - **Verify:** CI smoke tests pass on both OSes; locally, `CUDA_VISIBLE_DEVICES=-1`
   forces the CPU path.
@@ -401,7 +402,7 @@ before moving on.
   effect with a working GPU.
 - Found while profiling: the UF16 palette was built with 17 heap allocations per pixel
   (heap-lock contention across threads; a GPU frame took ~1 s). Now a constant table.
-- `--cuda` / `--no-cuda` options. `save_and_exit` logs the frame time (the slowest
+- `--cuda` / `--no-cuda` options. `--save-and-exit` logs the frame time (the slowest
   thread's slice). Status line: "Cuda Running" only after the GPU has rendered, "Cuda N/A"
   when there's no GPU or no kernel for the fractal's current settings.
 - `has_gpu_kernel`: the Buddhabrot kernel only does z^2 + c, so the Julia, anti and
@@ -439,6 +440,10 @@ before moving on.
   `tools/make_third_party_notices.py` (rerun after changing `versions.cmake`). It covers
   SFML, TGUI, FreeType, HarfBuzz, SheenBidi, stb_image, qoi, cpp-unicodelib, glad,
   nlohmann/json, CMakeRC, tinycolormap and the CUDA runtime.
+- Command line cleaned up: `--threads <n>`, `--save-and-exit <key> <png>` and `--hide`
+  replace the positional `[threads]`, `save_and_exit ... [hide]`. Missing values or stray
+  words print an error and the usage (exit 2). Threads are capped at 32 (`MAX_THREADS`, the
+  per-thread arrays' size); CPUs with 34+ threads would have overrun them.
 - The origin and license of the escape images (copied from the old repo) is unknown;
   hubble.jpg and jupiter.jpg look like NASA images (public domain), the rest are unclear.
 - A `fractals-v*` tag creates a GitHub Release with `fractals.exe` + the Linux
