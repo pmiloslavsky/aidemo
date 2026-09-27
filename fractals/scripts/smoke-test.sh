@@ -33,7 +33,7 @@ for key in "$root"/tests/smoke/*.json; do
 done
 
 log="$work/FractalsData/fractals.log"
-if grep -q '^CUDA' "$log"; then grep '^CUDA' "$log" | sed 's/^/log  /'
+if grep -q '^CUDA' "$log"; then grep -E '^(CUDA|OpenGL)' "$log" | sed 's/^/log  /'
 else echo "FAIL: no CUDA detection line in the log"; status=1; fi
 if [ "$(ls "$work/FractalsData/themes" | wc -l)" -gt 0 ]; then echo "ok   assets extracted"
 else echo "FAIL: themes not extracted"; status=1; fi

@@ -74,7 +74,7 @@ jobs:
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/smoke-test.ps1 -Exe build/${{ matrix.preset }}/bin/${{ matrix.binary }}
+        run: ./scripts/smoke-test.ps1 -SoftwareGL -Exe build/${{ matrix.preset }}/bin/${{ matrix.binary }}
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'

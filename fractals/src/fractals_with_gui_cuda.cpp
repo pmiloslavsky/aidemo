@@ -1096,6 +1096,15 @@ bool hide = false;
 std::mutex thread_result_report_mutex;
 
 // Overall Model that gets drawn each cycle
+// Logged once: it would otherwise repeat every frame
+void logTextureFailure(sf::Vector2u size) {
+  static std::atomic<bool> logged{false};
+  if (logged.exchange(true)) return;
+  cout << "Can't show the image: OpenGL can't make a " << size.x << "x" << size.y
+       << " texture (limit " << sf::Texture::getMaximumSize()
+       << "). Is the graphics driver installed?" << endl;
+}
+
 class FractalModel : public sf::Drawable, public sf::Transformable {
  public:
   FractalModel(unsigned int _view_width, unsigned int _view_height)
@@ -1605,7 +1614,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       }
     }
 
-    if (!texture.loadFromImage(image)) cout << "texture.loadFromImage failed" << endl;
+    if (!texture.loadFromImage(image)) logTextureFailure(image.getSize());
     sprite.emplace(texture);
 
     // sprite.setOrigin(800,600);
@@ -1696,7 +1705,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       }
     }
 
-    if (!texture.loadFromImage(image)) cout << "texture.loadFromImage failed" << endl;
+    if (!texture.loadFromImage(image)) logTextureFailure(image.getSize());
     sprite.emplace(texture);
   }
 
@@ -2890,8 +2899,13 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
   if (display_gui) pgui->draw();
 
   sf::Vector2u windowSize = window.getSize();
-  sf::Texture texture(sf::Vector2u(windowSize.x, windowSize.y));
-  // texture.create(IMAGE_WIDTH, IMAGE_HEIGHT);
+  sf::Texture texture;
+  if (!texture.resize(windowSize)) {
+    // e.g. Windows' built-in OpenGL 1.1 (no GPU driver) is limited to 1024x1024
+    cout << "Failed to save screenshot: OpenGL can't make a " << windowSize.x << "x"
+         << windowSize.y << " texture (limit " << sf::Texture::getMaximumSize() << ")" << endl;
+    return;
+  }
   texture.update(window);
   sf::Image screenshot = texture.copyToImage();
   std::string outname = (savename != "none")
@@ -2983,6 +2997,12 @@ int main(int argc, char **argv) {
   if (hide) window.setVisible(false);
 
   window.setKeyRepeatEnabled(false);
+
+  {
+    sf::ContextSettings gl = window.getSettings();
+    cout << "OpenGL " << gl.majorVersion << "." << gl.minorVersion << ", max texture size "
+         << sf::Texture::getMaximumSize() << endl;
+  }
 
   // // Display the list of all the video modes available for fullscreen
   // std::vector<sf::VideoMode> modes = sf::VideoMode::getFullscreenModes();

@@ -363,6 +363,12 @@ before moving on.
   `changed_key.json`, the log's CUDA line and the extracted assets. It passes locally on
   Windows with and without `CUDA_VISIBLE_DEVICES=-1`, and on Linux (WSL, CPU-only build).
   Only a Mandelbrot key: in `save_and_exit`, probabilistic fractals never count as done.
+- CI Windows has no GPU, so only Windows' OpenGL 1.1 (textures up to 1024x1024): the 2560x1440
+  texture failed and saving the screenshot threw an uncaught exception (exit 0xC0000409).
+  The app now logs the OpenGL version and texture limit at startup, reports a texture
+  failure once, and a failed screenshot logs instead of crashing. CI puts Mesa's llvmpipe
+  `opengl32.dll` next to the exe copy (`smoke-test.ps1 -SoftwareGL`; version pinned in
+  `versions.cmake`, unpacked with Windows' own `tar`).
 - Not tested: a real CUDA failure in the middle of a session.
 - A missing driver, no NVIDIA GPU or a CUDA error falls back to CPU threads with a log
   message instead of crashing.

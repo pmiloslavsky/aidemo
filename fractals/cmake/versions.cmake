@@ -9,5 +9,10 @@ set(FRACTALS_JSON_VERSION 3.12.0)
 # CUDA toolkit CI installs, full version (local builds use whatever nvcc is installed, >= 12.0)
 set(FRACTALS_CUDA_CI_VERSION 12.9.1)
 
+# Mesa (llvmpipe software OpenGL) for the Windows CI smoke test only: the runners
+# have no GPU, and Windows' built-in OpenGL 1.1 caps textures at 1024x1024.
+# From https://github.com/pal1000/mesa-dist-win/releases
+set(FRACTALS_CI_MESA_VERSION 26.2.3)
+
 # GTX 10xx, RTX 20xx, 30xx, 40xx, 50xx (SASS) + PTX for GPUs newer than sm_120
 set(FRACTALS_CUDA_ARCHITECTURES 61-real 75-real 86-real 89-real 120-real 120-virtual)
