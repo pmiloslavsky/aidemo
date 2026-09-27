@@ -302,7 +302,37 @@ before moving on.
 - **Verify:** copy only the exe to an empty folder, run it, and check that `FractalsData/`
   is created and everything works. Check the fallback from a read-only folder.
 
-### M4: JSON keys + movie script
+### M4: JSON keys + movie script ✅
+- Done. Keys are `FractalsData/keys/<fractal>_<crc>.json`; "Load Next Key" goes through
+  `*.json` in name order. Format (every field optional except `fractal`):
+  `format_version`, `fractal` (by name), `max_iterations` [3], `power`, `zconst` [re, im],
+  `escape_radius`, `random_sample`, `view` {`x_start`, `y_start`, `zoom`,
+  `requested_zoom`, `theta`}, `coloring` {`algo`, `cycle_size`, `palette`,
+  `reflect_palette`}, `lighting` {`pos_r`, `pos_i`, `angle`, `height`}, `interior` {same
+  as coloring}. Interior coloring is new: the old binary keys didn't store it.
+- The view is stored without the per-pixel values (`xdelta`, `current_width`, ...); they
+  are recalculated for the current window when a key loads, so a key saved at one
+  resolution loads at another. Loading zooms about the center from `zoom` to
+  `requested_zoom`, which is what the movie script animates.
+- Doubles: nlohmann writes the shortest text that parses back to the same double, which
+  is lossless like `%.17g` (checked at 1e-12 zoom).
+- Unknown enum names fall back to the default (the first entry of each name table);
+  an unknown fractal name makes the key fail to load, with a log message.
+- One capture/apply helper replaces the four copies of the load code. Also fixed:
+  the palette list showed Hot and Turbo swapped (list order didn't match the enum), and
+  the in-memory "Save Fractal" list could write one past its end.
+- `save_and_exit` writes `changed_key.json` (was `changed_key.fractal_key_version_1`).
+- `tools/make_fractal_movies.py`: JSON keys; finds the exe in `build/*-release*/bin`
+  (or `--exe`); `--key`, `--out`, `--frames-only`, `--keep-frames`; no `shell=True`, so it
+  runs on Linux; frames sorted by number. Pillow and moviepy are needed only for the
+  GIF/MP4 step.
+- Verified: a hand-written key renders, and rendering the `changed_key.json` it writes
+  gives a byte-identical PNG and an identical key. GUI (computer use): "Load Next Key"
+  loads a key and "Save Key" writes one with the same view and coloring. The movie script
+  made 4 frames, a GIF and 2 MP4s (Pillow/moviepy in a scratch venv).
+- Windows vs Linux (WSL, GCC 15) render of the same key: 1,979 of 3.7M pixels differ
+  (0.05%), all near the chaotic boundary, where MSVC's and glibc's `pow`/`log` round
+  differently and an escape count changes by one. Same tolerance as the M6 GPU/CPU rule.
 - nlohmann/json save/load, enums by name, `%.17g` doubles, defaults for missing fields.
 - `make_fractal_movies.py` switched to JSON.
 - **Verify:** save → load round trip reproduces the same image; a key saved on Windows

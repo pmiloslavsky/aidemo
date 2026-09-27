@@ -72,6 +72,13 @@ FetchContent_Declare(TGUI
   SYSTEM)
 FetchContent_MakeAvailable(TGUI)
 
+# nlohmann/json for the fractal keys (the release tarball is much smaller than the repo)
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v${FRACTALS_JSON_VERSION}/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP ON
+  SYSTEM)
+FetchContent_MakeAvailable(json)
+
 # CMakeRC is a single CMake script; SOURCE_SUBDIR points at a folder without a
 # CMakeLists.txt so only the sources are downloaded (no tests get added).
 FetchContent_Declare(cmrc
@@ -80,8 +87,8 @@ FetchContent_Declare(cmrc
   GIT_SHALLOW ON
   SOURCE_SUBDIR do-not-add)
 FetchContent_MakeAvailable(cmrc)
-# CMakeRC 2.0.1 asks for CMake 3.3, which CMake 4 refuses (and 3.x warns about)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+# CMakeRC 2.0.1 asks for CMake 3.3: CMake 4 refuses that and 3.x warns about it
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 include(${cmrc_SOURCE_DIR}/CMakeRC.cmake)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 
@@ -98,7 +105,7 @@ cmrc_add_resource_library(fractals_assets
 # The app
 # ---------------------------------------------------------------------------
 add_executable(fractals src/fractals_with_gui_cuda.cpp src/runtime.cpp)
-target_link_libraries(fractals PRIVATE fractals_assets)
+target_link_libraries(fractals PRIVATE fractals_assets nlohmann_json::nlohmann_json)
 
 if(FRACTALS_CUDA)
   target_sources(fractals PRIVATE src/buddha_cuda_kernel.cu)

@@ -4,6 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include <TGUI/TGUI.hpp>
 #include <TGUI/Backend/SFML-Graphics.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -21,6 +22,29 @@
 #include "fractals.h"
 #include "runtime.h"
 #include "tinycolormap.hpp"
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
+// Key files store palettes by name. The first entry is also what an unknown name
+// maps to, so it is the default palette (UF16).
+namespace tinycolormap {
+NLOHMANN_JSON_SERIALIZE_ENUM(ColormapType,
+                             {{ColormapType::UF16, "UF16"},
+                              {ColormapType::Parula, "Parula"},
+                              {ColormapType::Heat, "Heat"},
+                              {ColormapType::Jet, "Jet"},
+                              {ColormapType::Turbo, "Turbo"},
+                              {ColormapType::Hot, "Hot"},
+                              {ColormapType::Gray, "Gray"},
+                              {ColormapType::Magma, "Magma"},
+                              {ColormapType::Inferno, "Inferno"},
+                              {ColormapType::Plasma, "Plasma"},
+                              {ColormapType::Viridis, "Viridis"},
+                              {ColormapType::Cividis, "Cividis"},
+                              {ColormapType::Github, "Github"},
+                              {ColormapType::Cubehelix, "Cubehelix"}})
+}  // namespace tinycolormap
 
 // Fractals:
 //  Mandlebrot
@@ -104,6 +128,21 @@ enum class InteriorColoringAlgo {
   DIST2,
   TEMP
 };
+
+// Names used in key files; the first entry is the default for unknown names
+NLOHMANN_JSON_SERIALIZE_ENUM(ColoringAlgo, {{ColoringAlgo::MULTICYCLE, "MULTICYCLE"},
+                                            {ColoringAlgo::SMOOTH, "SMOOTH"},
+                                            {ColoringAlgo::USE_IMAGE, "USE_IMAGE"},
+                                            {ColoringAlgo::SHADOW_MAP, "SHADOW_MAP"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(InteriorColoringAlgo,
+                             {{InteriorColoringAlgo::SOLID, "SOLID"},
+                              {InteriorColoringAlgo::MULTICYCLE, "MULTICYCLE"},
+                              {InteriorColoringAlgo::USE_IMAGE, "USE_IMAGE"},
+                              {InteriorColoringAlgo::TRIG, "TRIG"},
+                              {InteriorColoringAlgo::TRIG2, "TRIG2"},
+                              {InteriorColoringAlgo::DIST, "DIST"},
+                              {InteriorColoringAlgo::DIST2, "DIST2"},
+                              {InteriorColoringAlgo::TEMP, "TEMP"}})
 #define LAST_INTERIOR_COLOR_ALGO ((unsigned int)InteriorColoringAlgo::DISTANCE)
 unsigned int interior_color_adjust = 0;
 
@@ -167,9 +206,9 @@ class NSReferenceFrame {
                                         string("128"), string("256")};
   vector<string> color_names{string("Parula"),
                              string("Heat"),
-                             string("Jet"),
-                             string("Hot"),
+                             string("Jet"),  // same order as tinycolormap::ColormapType
                              string("Turbo"),
+                             string("Hot"),
                              string("Gray"),
                              string("Magma"),
                              string("Inferno"),
@@ -417,16 +456,12 @@ std::string separator{"/"};
 
 const int FRACTAL_VERSION{1};
 
-//directory_name
-std::string key_version =
-    std::string{"fractal_key_version_"} + to_string(FRACTAL_VERSION);
-
 // FractalsData/ (see runtime.h); set in main before anything loads or saves
 fs::path data_dir;
 std::string keys_location;
 
-
-// Should be trivially_copyable/serializable
+// A fractal description, kept in memory for undo and "Save Fractal", and
+// written to disk as a JSON key (see keyToJson)
 class SavedFractal {
  public:
   int version = FRACTAL_VERSION;
@@ -442,9 +477,13 @@ class SavedFractal {
   double current_escape_r;
 
   ReferenceFrame RF;
+  ReferenceFrameInt RI;  // interior coloring
   // but not NSR
 
-  SavedFractal(float _thetaxy, double _zoom) : valid{0}, RF{_thetaxy, _zoom} {};
+  SavedFractal(float _thetaxy, double _zoom)
+      : valid{0},
+        RF{_thetaxy, _zoom},
+        RI{InteriorColoringAlgo::SOLID, 256, tinycolormap::ColormapType::UF16, false} {};
 };
 
 //#include "fractals.h" SampleStats
@@ -2057,64 +2096,86 @@ void signalIntButton() {
 const int max_saved = 30;
 SavedFractal no_fractal{0, 1.0};
 int last_loaded_key_ix = -1;
+int key_count = 0;  // keys found the last time "Load Next Key" looked
 int frac_ix = 0;
 int displayed_frac_ix = -1;
 vector<SavedFractal> savf(max_saved,
                           no_fractal);  // for saving good looking ones
 SavedFractal Last(no_fractal);          // for undo
 
+// The current fractal description: type, parameters, view, coloring, lighting
+SavedFractal captureFractal(shared_ptr<FractalModel> p_model) {
+  const SupportedFractal &f = FRAC[p_model->current_fractal];
+  SavedFractal s = no_fractal;
+  s.version = FRACTAL_VERSION;
+  s.valid = 1;
+  s.current_fractal = p_model->current_fractal;
+  s.current_power = f.current_power;
+  for (int i = 0; i < 3; ++i) s.current_max_iters[i] = f.current_max_iters[i];
+  s.current_zconst = f.current_zconst;
+  s.current_escape_r = f.current_escape_r;
+  s.RF = R;
+  s.RI = RI;
+  return s;
+}
+
+// Switches to a saved fractal. Only the description is taken from it; the
+// window size, the loaded escape image and the selection stay as they are, and
+// the per-pixel view values are recalculated for the current window size.
+void applyFractal(shared_ptr<FractalModel> p_model, const SavedFractal &s) {
+  p_model->current_fractal = s.current_fractal;
+  p_model->reset_fractal_and_reference_frame();
+
+  SupportedFractal &f = FRAC[s.current_fractal];
+  f.current_power = s.current_power;
+  for (int i = 0; i < 3; ++i) f.current_max_iters[i] = s.current_max_iters[i];
+  f.current_zconst = s.current_zconst;
+  f.current_escape_r = s.current_escape_r;
+
+  const ReferenceFrame &r = s.RF;
+  R.theta = r.theta;
+  R.xstart = r.xstart;
+  R.ystart = r.ystart;
+  R.displayed_zoom = r.displayed_zoom;
+  R.requested_zoom = r.requested_zoom;
+  R.color_algo = r.color_algo;
+  R.color_cycle_size = r.color_cycle_size;
+  R.palette = r.palette;
+  R.reflect_palette = r.reflect_palette;
+  R.light_pos_r = r.light_pos_r;
+  R.light_pos_i = r.light_pos_i;
+  R.light_angle = r.light_angle;
+  R.light_height = r.light_height;
+  R.random_sample = r.random_sample;
+  if (R.color_algo == ColoringAlgo::USE_IMAGE && !R.image_loaded)
+    R.color_algo = ColoringAlgo::MULTICYCLE;
+  RI = s.RI;
+
+  // A pan to the center recalculates the per-pixel deltas for this window;
+  // then zoom about the center from the saved zoom to the requested one (the
+  // movie script animates requested_zoom)
+  p_model->panFractal(R.original_width / 2.0, R.original_height / 2.0);
+  p_model->zoomFractal(R.requested_zoom);
+}
+
 void signalSaveFractal(shared_ptr<FractalModel> p_model,
                        shared_ptr<tgui::Gui> pgui) {
   updateGuiElements(pgui, p_model);
-
-  // Mainly reference frame stuff
-  // p_model->current_fractal
-  // FRAC[p_model->current_fractal].current_power
-  // FRAC[p_model->current_fractal].current_max_iters[0]
-  // FRAC[p_model->current_fractal].current_zconst
-  // TBD colors
-
-  savf[frac_ix] = no_fractal;
-  savf[frac_ix].version = FRACTAL_VERSION;
-  savf[frac_ix].valid = 1;
-  savf[frac_ix].current_fractal = p_model->current_fractal;
-  savf[frac_ix].current_power = FRAC[p_model->current_fractal].current_power;
-  savf[frac_ix].current_max_iters[0] =
-      FRAC[p_model->current_fractal].current_max_iters[0];
-  savf[frac_ix].current_max_iters[1] =
-      FRAC[p_model->current_fractal].current_max_iters[1];
-  savf[frac_ix].current_max_iters[2] =
-      FRAC[p_model->current_fractal].current_max_iters[2];
-  savf[frac_ix].current_zconst = FRAC[p_model->current_fractal].current_zconst;
-  savf[frac_ix].current_escape_r =
-      FRAC[p_model->current_fractal].current_escape_r;
-  savf[frac_ix].RF = R;
-
-  frac_ix++;
-  if (frac_ix > max_saved) frac_ix = 0;
-
+  savf[frac_ix] = captureFractal(p_model);
+  frac_ix = (frac_ix + 1) % max_saved;
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void SaveLast(shared_ptr<FractalModel> p_model) {
-  Last = no_fractal;
-  Last.version = FRACTAL_VERSION;
-  Last.valid = 1;
-  Last.current_fractal = p_model->current_fractal;
-  Last.current_power = FRAC[p_model->current_fractal].current_power;
-  Last.current_max_iters[0] =
-      FRAC[p_model->current_fractal].current_max_iters[0];
-  Last.current_max_iters[1] =
-      FRAC[p_model->current_fractal].current_max_iters[1];
-  Last.current_max_iters[2] =
-      FRAC[p_model->current_fractal].current_max_iters[2];
-  Last.current_zconst = FRAC[p_model->current_fractal].current_zconst;
-  Last.current_escape_r = FRAC[p_model->current_fractal].current_escape_r;
-  Last.RF = R;
+  Last = captureFractal(p_model);
 }
 
-/* CRC-32C (iSCSI) polynomial in reversed bit order. */
-//#define POLY 0x82f63b78
+// ---------------------------------------------------------------------------
+// Fractal keys: JSON files in FractalsData/keys. Fields are looked up by name,
+// a missing field keeps its default and unknown fields are ignored, so adding
+// fields never breaks old keys. Enums are stored by name.
+// ---------------------------------------------------------------------------
+const int KEY_FORMAT_VERSION = 1;
 
 /* CRC-32 (Ethernet, ZIP, etc.) polynomial in reversed bit order. */
 #define POLY 0xedb88320
@@ -2130,63 +2191,154 @@ uint32_t crc32c(uint32_t crc, const unsigned char *buf, size_t len) {
   return ~crc;
 }
 
-  //if (fs::is_directory(filename)) {
-  //for (auto &p : fs::directory_iterator(filename)) {
-  //  if (!fs::exists(key_version + separator + p.path().filename().string())) {
-  //    fs::copy_file(p.path(),
-  //                  key_version + separator + p.path().filename().string());
-  //  }
-  //}
+json keyToJson(const SavedFractal &s) {
+  const ReferenceFrame &r = s.RF;
+  json j;
+  j["format_version"] = KEY_FORMAT_VERSION;
+  j["fractal"] = FRAC[s.current_fractal].name;
+  j["max_iterations"] = json::array(
+      {s.current_max_iters[0], s.current_max_iters[1], s.current_max_iters[2]});
+  j["power"] = s.current_power;
+  j["zconst"] = json::array({s.current_zconst.real(), s.current_zconst.imag()});
+  j["escape_radius"] = s.current_escape_r;
+  j["random_sample"] = r.random_sample;
+  j["view"] = {{"x_start", r.xstart},
+               {"y_start", r.ystart},
+               {"zoom", r.displayed_zoom},
+               {"requested_zoom", r.requested_zoom},
+               {"theta", r.theta}};
+  j["coloring"] = {{"algo", r.color_algo},
+                   {"cycle_size", r.color_cycle_size},
+                   {"palette", r.palette},
+                   {"reflect_palette", r.reflect_palette}};
+  j["lighting"] = {{"pos_r", r.light_pos_r},
+                   {"pos_i", r.light_pos_i},
+                   {"angle", r.light_angle},
+                   {"height", r.light_height}};
+  j["interior"] = {{"algo", s.RI.color_algo},
+                   {"cycle_size", s.RI.color_cycle_size},
+                   {"palette", s.RI.palette},
+                   {"reflect_palette", s.RI.reflect_palette}};
+  return j;
+}
 
+// j[key], or def when it's missing or has the wrong type
+template <class T>
+T keyField(const json &j, const char *key, T def) {
+  auto it = j.find(key);
+  if (it == j.end()) return def;
+  try {
+    return it->get<T>();
+  } catch (const json::exception &) {
+    cout << "key field \"" << key << "\" has the wrong type, using the default" << endl;
+    return def;
+  }
+}
+
+// j[group][key], or def
+template <class T>
+T keyField(const json &j, const char *group, const char *key, T def) {
+  auto g = j.find(group);
+  if (g == j.end() || !g->is_object()) return def;
+  return keyField(*g, key, def);
+}
+
+bool keyFromJson(const json &j, SavedFractal &s) {
+  if (!j.is_object()) {
+    cout << "key is not a JSON object" << endl;
+    return false;
+  }
+  int format = keyField(j, "format_version", 0);
+  if (format > KEY_FORMAT_VERSION)
+    cout << "key format_version " << format << " is newer than this app ("
+         << KEY_FORMAT_VERSION << "); unknown fields are ignored" << endl;
+
+  std::string name = keyField(j, "fractal", std::string{});
+  auto found = std::find_if(FRAC.begin(), FRAC.end(),
+                            [&](const SupportedFractal &f) { return f.name == name; });
+  if (found == FRAC.end()) {
+    cout << "key names an unknown fractal: \"" << name << "\"" << endl;
+    return false;
+  }
+  const SupportedFractal &f = *found;
+
+  s = no_fractal;
+  s.version = FRACTAL_VERSION;
+  s.valid = 1;
+  s.current_fractal = (unsigned int)(found - FRAC.begin());
+
+  std::vector<unsigned int> iters = keyField(j, "max_iterations", f.default_max_iters);
+  for (int i = 0; i < 3; ++i)
+    s.current_max_iters[i] = i < (int)iters.size() ? iters[i] : f.default_max_iters[i];
+  s.current_power = keyField(j, "power", f.default_power);
+  std::vector<double> z = keyField(j, "zconst", std::vector<double>{});
+  s.current_zconst = z.size() == 2 ? std::complex<double>(z[0], z[1]) : f.default_zconst;
+  s.current_escape_r = keyField(j, "escape_radius", f.default_escape_r);
+
+  // Defaults are what the app starts with
+  ReferenceFrame &r = s.RF;
+  r.random_sample = keyField(j, "random_sample", false);
+  r.xstart = keyField(j, "view", "x_start", f.xMinMax[0]);
+  r.ystart = keyField(j, "view", "y_start", f.yMinMax[0]);
+  r.displayed_zoom = keyField(j, "view", "zoom", 1.0);
+  r.requested_zoom = keyField(j, "view", "requested_zoom", r.displayed_zoom);
+  r.theta = keyField(j, "view", "theta", 0.0f);
+  r.color_algo = keyField(j, "coloring", "algo", ColoringAlgo::MULTICYCLE);
+  r.color_cycle_size = keyField(j, "coloring", "cycle_size", 32);
+  r.palette = keyField(j, "coloring", "palette", tinycolormap::ColormapType::UF16);
+  r.reflect_palette = keyField(j, "coloring", "reflect_palette", false);
+  r.light_pos_r = keyField(j, "lighting", "pos_r", 1.0);
+  r.light_pos_i = keyField(j, "lighting", "pos_i", 0.0);
+  r.light_angle = keyField(j, "lighting", "angle", 45.0);
+  r.light_height = keyField(j, "lighting", "height", 1.5);
+  s.RI.color_algo = keyField(j, "interior", "algo", InteriorColoringAlgo::SOLID);
+  s.RI.color_cycle_size = keyField(j, "interior", "cycle_size", 256);
+  s.RI.palette = keyField(j, "interior", "palette", tinycolormap::ColormapType::UF16);
+  s.RI.reflect_palette = keyField(j, "interior", "reflect_palette", false);
+  return true;
+}
+
+bool writeKey(const fs::path &filename, const SavedFractal &s) {
+  std::ofstream f(filename);
+  f << keyToJson(s).dump(2) << "\n";
+  if (!f) cout << "failed to write key " << filename.string() << endl;
+  return (bool)f;
+}
+
+bool readKey(const fs::path &filename, SavedFractal &s) {
+  std::ifstream f(filename);
+  if (!f) {
+    cout << "can't open key " << filename.string() << endl;
+    return false;
+  }
+  json j = json::parse(f, nullptr, /*allow_exceptions=*/false, /*ignore_comments=*/true);
+  if (j.is_discarded()) {
+    cout << "key is not valid JSON: " << filename.string() << endl;
+    return false;
+  }
+  return keyFromJson(j, s);
+}
+
+// Saves the current fractal. infname (no extension) is used by save_and_exit;
+// otherwise the key goes to FractalsData/keys/<fractal>_<crc>.json.
 void signalSaveKey(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui,
                    std::string infname = "") {
   updateGuiElements(pgui, p_model);
 
-  savf[frac_ix] = no_fractal;
-  savf[frac_ix].version = FRACTAL_VERSION;
-  savf[frac_ix].valid = 1;
-  savf[frac_ix].current_fractal = p_model->current_fractal;
-  savf[frac_ix].current_power = FRAC[p_model->current_fractal].current_power;
-  savf[frac_ix].current_max_iters[0] =
-      FRAC[p_model->current_fractal].current_max_iters[0];
-  savf[frac_ix].current_max_iters[1] =
-      FRAC[p_model->current_fractal].current_max_iters[1];
-  savf[frac_ix].current_max_iters[2] =
-      FRAC[p_model->current_fractal].current_max_iters[2];
-  savf[frac_ix].current_zconst = FRAC[p_model->current_fractal].current_zconst;
-  savf[frac_ix].current_escape_r =
-      FRAC[p_model->current_fractal].current_escape_r;
-  savf[frac_ix].RF = R;
+  savf[frac_ix] = captureFractal(p_model);
+  const SavedFractal &s = savf[frac_ix];
+  frac_ix = (frac_ix + 1) % max_saved;
 
-  SavedFractal *p_savf = &savf[frac_ix];
-
-  frac_ix++;
-  if (frac_ix > max_saved) frac_ix = 0;
-
-  std::string filename;
-  std::ofstream key;
-
-  // save the keys 
-  if (!fs::is_directory(keys_location + key_version) ||
-      !fs::exists(keys_location + key_version)) {
-    fs::create_directory(keys_location + key_version);
-  }
-
-  uint32_t crc =
-      crc32c(0, reinterpret_cast<unsigned char *>(p_savf), sizeof(*p_savf));
-
+  fs::path filename;
   if (infname != "") {
-    filename = infname + "." + key_version;
+    filename = infname + ".json";
   } else {
-    filename = keys_location + key_version + separator + FRAC[p_model->current_fractal].name +
-               "_" + to_string(crc) + "." + key_version;
+    std::string text = keyToJson(s).dump();
+    uint32_t crc = crc32c(0, reinterpret_cast<const unsigned char *>(text.data()), text.size());
+    filename = fs::path(keys_location) / (FRAC[s.current_fractal].name + "_" + to_string(crc) + ".json");
   }
-  key.open(filename.c_str(), ios::out | ios::binary);
-  key.write(reinterpret_cast<char *>(p_savf), sizeof(*p_savf));
-  key.close();
-
-  cout << "saved: " << filename << " " << p_savf->current_fractal << " "
-       << p_savf->current_power << endl;
+  if (writeKey(filename, s))
+    cout << "saved: " << filename.string() << " " << FRAC[s.current_fractal].name << endl;
 
   setGuiElementsFromModel(pgui, p_model);
 }
@@ -2194,164 +2346,63 @@ void signalSaveKey(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui,
 void signalLoadNextSaved(shared_ptr<FractalModel> p_model,
                          shared_ptr<tgui::Gui> pgui) {
   updateGuiElements(pgui, p_model);
-  p_model->reset_fractal_and_reference_frame();
 
-  SavedFractal *p_savf;
-  int tried = 0;
-  int try_frac_ix = ++displayed_frac_ix;
-
-  while (1) {
-    p_savf = &savf[try_frac_ix];
-    if (p_savf->valid != 0) break;
-    if (tried > max_saved) return;
-    try_frac_ix++;
-    if (try_frac_ix > max_saved) try_frac_ix = 0;
-    tried++;
+  int ix = displayed_frac_ix;
+  for (int tried = 0; tried < max_saved; ++tried) {
+    ix = (ix + 1) % max_saved;
+    if (savf[ix].valid != 0) {
+      displayed_frac_ix = ix;
+      applyFractal(p_model, savf[ix]);
+      break;
+    }
   }
-  displayed_frac_ix = try_frac_ix;
-
-  p_model->current_fractal = p_savf->current_fractal;
-
-  FRAC[p_model->current_fractal].current_power = p_savf->current_power;
-  FRAC[p_model->current_fractal].current_max_iters[0] =
-      p_savf->current_max_iters[0];
-  FRAC[p_model->current_fractal].current_max_iters[1] =
-      p_savf->current_max_iters[1];
-  FRAC[p_model->current_fractal].current_max_iters[2] =
-      p_savf->current_max_iters[2];
-  FRAC[p_model->current_fractal].current_zconst = p_savf->current_zconst;
-  FRAC[p_model->current_fractal].current_escape_r = p_savf->current_escape_r;
-  R = p_savf->RF;
 
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void LoadLast(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui) {
   updateGuiElements(pgui, p_model);
-  p_model->reset_fractal_and_reference_frame();
-
-  SavedFractal *p_savf = &Last;
-
-  p_model->current_fractal = p_savf->current_fractal;
-
-  FRAC[p_model->current_fractal].current_power = p_savf->current_power;
-  FRAC[p_model->current_fractal].current_max_iters[0] =
-      p_savf->current_max_iters[0];
-  FRAC[p_model->current_fractal].current_max_iters[1] =
-      p_savf->current_max_iters[1];
-  FRAC[p_model->current_fractal].current_max_iters[2] =
-      p_savf->current_max_iters[2];
-  FRAC[p_model->current_fractal].current_zconst = p_savf->current_zconst;
-  FRAC[p_model->current_fractal].current_escape_r = p_savf->current_escape_r;
-  R = p_savf->RF;
-
+  if (Last.valid) applyFractal(p_model, Last);
   setGuiElementsFromModel(pgui, p_model);
 }
 
+// save_and_exit: returns non-zero if the key can't be loaded
 int LoadProvidedKey(shared_ptr<FractalModel> p_model,
                     shared_ptr<tgui::Gui> pgui, std::string keyname) {
   updateGuiElements(pgui, p_model);
-  p_model->reset_fractal_and_reference_frame();
-  SavedFractal savef = no_fractal;
-  SavedFractal *p_savf = &savef;
-  std::string filename;
 
-  // Check if key contains key_version
-  std::size_t found = keyname.find(key_version);
-  if ((keyname == "no key") || (found == std::string::npos)) {
-    cout << "wrong fractal version: " << keyname << std::flush << endl;
-    return 1;
-  }
-
-  filename = keyname;
-
-  std::ifstream key;
-  key.open(filename.c_str(), ios::in | ios::binary);
-  key.read(reinterpret_cast<char *>(p_savf), sizeof(*p_savf));
-  key.close();
-
-  cout << "LOADED PASSED IN KEY: " << keyname << " " << p_savf->current_fractal
-       << " *****" << endl;
-
-  p_model->current_fractal = p_savf->current_fractal;
-
-  FRAC[p_model->current_fractal].current_power = p_savf->current_power;
-  FRAC[p_model->current_fractal].current_max_iters[0] =
-      p_savf->current_max_iters[0];
-  FRAC[p_model->current_fractal].current_max_iters[1] =
-      p_savf->current_max_iters[1];
-  FRAC[p_model->current_fractal].current_max_iters[2] =
-      p_savf->current_max_iters[2];
-  FRAC[p_model->current_fractal].current_zconst = p_savf->current_zconst;
-  FRAC[p_model->current_fractal].current_escape_r = p_savf->current_escape_r;
-  R = p_savf->RF;
-
-  // R.original_width/2 R.original_height/2 is a click on the center
-  // Assume the user changed xstart and ystart
-  cout << "Changes: " << R.original_width << " " << R.original_height << " "
-       << R.requested_zoom << " " << R.xstart << " " << R.ystart << " " << endl;
-  p_model->panFractal(R.original_width / 2.0, R.original_height / 2.0);
-
-  p_model->zoomFractal(R.requested_zoom);
+  SavedFractal s = no_fractal;
+  if (!readKey(keyname, s)) return 1;
+  applyFractal(p_model, s);
+  cout << "LOADED PASSED IN KEY: " << keyname << " " << FRAC[s.current_fractal].name
+       << " zoom " << R.displayed_zoom << " start " << R.xstart << " " << R.ystart << endl;
 
   setGuiElementsFromModel(pgui, p_model);
   return 0;
 }
 
-int key_count = 0;
+// Loads the keys in FractalsData/keys one after another, in name order
 void signalLoadNextKey(shared_ptr<FractalModel> p_model,
                        shared_ptr<tgui::Gui> pgui) {
   updateGuiElements(pgui, p_model);
-  p_model->reset_fractal_and_reference_frame();
 
-  SavedFractal savef = no_fractal;
-  SavedFractal *p_savf = &savef;
-  int ix = 0;
+  std::vector<fs::path> keys;
+  std::error_code ec;
+  for (auto &p : fs::directory_iterator(keys_location, ec))
+    if (p.path().extension() == ".json") keys.push_back(p.path());
+  std::sort(keys.begin(), keys.end());
+  key_count = (int)keys.size();
 
-  key_count = 0;
-  for (auto &p : fs::directory_iterator(keys_location + key_version)) {
-    std::cout << p.path() << '\n';
-    key_count++;
-  }
-  if (key_count == 0) return;
-
-  int try_frac_ix = ++last_loaded_key_ix;
-
-  while (1) {
-    if (try_frac_ix >= key_count) try_frac_ix = 0;
-    break;
-  }
-  last_loaded_key_ix = try_frac_ix;
-
-  std::string filename;
-  for (auto &p : fs::directory_iterator(keys_location + key_version)) {
-    if (ix == try_frac_ix) {
-      filename = p.path().string();
+  // Skip keys that fail to load
+  for (size_t tried = 0; tried < keys.size(); ++tried) {
+    last_loaded_key_ix = (last_loaded_key_ix + 1) % (int)keys.size();
+    SavedFractal s = no_fractal;
+    if (readKey(keys[last_loaded_key_ix], s)) {
+      applyFractal(p_model, s);
+      cout << "loaded: " << keys[last_loaded_key_ix].string() << endl;
       break;
     }
-    ix++;
   }
-
-  std::ifstream key;
-  key.open(filename.c_str(), ios::in | ios::binary);
-  key.read(reinterpret_cast<char *>(p_savf), sizeof(*p_savf));
-  key.close();
-
-  cout << "loaded: " << filename << " " << p_savf->current_fractal << " "
-       << p_savf->current_power << endl;
-
-  p_model->current_fractal = p_savf->current_fractal;
-
-  FRAC[p_model->current_fractal].current_power = p_savf->current_power;
-  FRAC[p_model->current_fractal].current_max_iters[0] =
-      p_savf->current_max_iters[0];
-  FRAC[p_model->current_fractal].current_max_iters[1] =
-      p_savf->current_max_iters[1];
-  FRAC[p_model->current_fractal].current_max_iters[2] =
-      p_savf->current_max_iters[2];
-  FRAC[p_model->current_fractal].current_zconst = p_savf->current_zconst;
-  FRAC[p_model->current_fractal].current_escape_r = p_savf->current_escape_r;
-  R = p_savf->RF;
 
   setGuiElementsFromModel(pgui, p_model);
 }
@@ -2887,11 +2938,6 @@ int main(int argc, char **argv) {
   update_and_draw = false;
   save_and_exit = false;
   hide = false;
-
-  if (std::is_trivially_copyable<SavedFractal>::value == false) {
-    cout << "SavedFractal not serializable\n";
-    return -1;
-  }
 
   // Options start with "--" and may appear anywhere; the rest keep their old
   // positions: [threads] or save_and_exit <key> <png> [hide]

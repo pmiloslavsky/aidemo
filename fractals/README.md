@@ -15,7 +15,7 @@ Linux. The plan and milestones are in [GOALS.md](GOALS.md).
 | `src/` | Application and CUDA kernel sources |
 | `assets/themes/` | TGUI themes (embedded in the exe) |
 | `assets/escape_images/` | Images for "use image" coloring (embedded in the exe) |
-| `tools/` | `make_fractal_movies.py`, which renders key-framed movies with the app |
+| `tools/` | `make_fractal_movies.py`, which renders a movie from a JSON key with the app (see its docstring) |
 
 Build instructions arrive with milestone M1.
 
