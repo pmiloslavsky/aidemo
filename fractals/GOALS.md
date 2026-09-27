@@ -420,7 +420,8 @@ before moving on.
 - Add an AppImage only if something is missing.
 - **Verify:** it works everywhere → tag `fractals-v1.0`.
 
-### M9: Code split (optional, before features)
+### M9: Code split (optional, before features) — needs the user's go-ahead
+- Not approved yet. Discuss it with the user before starting any of it (2026-09-27).
 - Split the 3,300-line file into modules: fractal math, CPU renderer, CUDA bridge, coloring,
   keys, GUI, app/paths. No behavior change.
 - **Verify:** CI smoke renders are identical before and after.
