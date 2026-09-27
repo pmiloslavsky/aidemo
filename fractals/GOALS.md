@@ -241,7 +241,7 @@ before moving on.
   Linux) and a FreeType → HarfBuzz link so GNU ld resolves their circular dependency.
   `-static-libstdc++ -static-libgcc`; the static-std-lib options are Windows-only.
 - CI CUDA: `FRACTALS_CUDA_CI_VERSION` is now the full version (12.9.1), which the Windows
-  network installer URL needs. Windows installs `nvcc nvvm crt cudart curand_dev`
+  network installer URL needs. Windows installs `nvcc cudart curand_dev`
   (`scripts/install-cuda-ci.ps1`); Linux installs `cuda-nvcc`, `cuda-cudart-dev` and
   `libcurand-dev` from NVIDIA's apt repo.
 - Build cache: the whole `build/<preset>` folder, keyed by the versions/CMake files plus

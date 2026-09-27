@@ -13,7 +13,8 @@ if (-not $env:RUNNER_TEMP) { $exe = Join-Path $env:TEMP "cuda_${Version}_network
 Write-Host "Downloading $url"
 Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
 
-$packages = 'nvcc', 'nvvm', 'crt', 'cudart', 'curand_dev' | ForEach-Object { "${_}_$mm" }
+# Names from NVIDIA's "Possible Subpackage Names" table (nvcc includes crt and nvvm)
+$packages = 'nvcc', 'cudart', 'curand_dev' | ForEach-Object { "${_}_$mm" }
 Write-Host "Installing: $($packages -join ' ')"
 $p = Start-Process -FilePath $exe -ArgumentList (@('-s') + $packages) -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "CUDA installer failed ($($p.ExitCode))" }
