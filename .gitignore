@@ -1,0 +1,16 @@
+# Build output
+build/
+out/
+fractals/build/
+fractals/out/
+
+# Runtime data the app creates next to the exe
+FractalsData/
+
+# IDE / OS
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
+__pycache__/

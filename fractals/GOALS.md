@@ -196,7 +196,10 @@ Today only Buddhabrot/Nebulabrot uses the GPU. Every other fractal runs on CPU t
 Each milestone ends with a working app and a local commit. "Verify" is what has to pass
 before moving on.
 
-### M0: Repo skeleton
+### M0: Repo skeleton ✅
+- Layout: `src/` (the unchanged sources), `assets/themes/`, `assets/escape_images/` (all 10
+  images), `tools/make_fractal_movies.py`. Root `.gitignore` and `.gitattributes`.
+- Copied from demo commit `4e55d14`.
 - Clone `aidemo`, create `fractals/`, and copy in the sources and assets listed above.
 - Move this file into the repo. Add `.gitignore` (build folders, `FractalsData/`).
 - **Verify:** the tree matches the port scope; nothing large or unwanted is committed.
