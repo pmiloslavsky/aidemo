@@ -457,7 +457,16 @@ before moving on.
   CUDA runtime redistribution notice).
 - **Verify:** a test tag produces a Release whose files download and run.
 
-### M8: Clean-machine check → v1.0
+### M8: Clean-machine check → v1.0 — in progress
+- Windows (user's machine, as the user asked instead of Windows Sandbox): the downloaded
+  `fractals-v0.9-test` exe, alone in a new folder, created `FractalsData/`, opened borderless
+  full screen by default and windowed with `--windowed`, ran Mandelbrot on the GPU (~62M
+  samples/s, "Cuda Running"), and right-click recenter, wheel zoom (0.9 per step), `c` and
+  `e` all worked. No redistributables are needed (`dumpbin /dependents`: system DLLs only).
+- Follow-up: two instances in the same folder share `fractals.log` and clobber it.
+- Computer-use quirk: with the borderless full-screen window in front, computer use
+  thinks the desktop is frontmost and blocks input; `open_application` also starts a new
+  instance without the shortcut's arguments. Test with `--windowed` via `Start-Process`.
 - Run the Release exe on a Windows machine or VM with no VS, CUDA or redistributables
   (Windows Sandbox works for this), and the Linux binary on a stock Ubuntu 22.04 / 24.04 /
   26.04 (WSL is fine).
