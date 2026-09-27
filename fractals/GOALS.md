@@ -383,8 +383,8 @@ before moving on.
 - **Verify:** CI smoke tests pass on both OSes; locally, `CUDA_VISIBLE_DEVICES=-1`
   forces the CPU path.
 
-### M6: CUDA Mandelbrot (+ Julia)
-- Done locally. `cuda_escape_time` runs one GPU thread per pixel for a render thread's
+### M6: CUDA Mandelbrot (+ Julia) ✅
+- Done (CI run 36353690222 green; the runners take the CPU path). `cuda_escape_time` runs one GPU thread per pixel for a render thread's
   columns, in column tiles sized from the measured speed (worst case: every pixel to max
   iterations; target 400 ms per tile). The CPU colors the results with
   `color_escape_pixel`, the same code as the CPU path. Per-thread CUDA streams;
