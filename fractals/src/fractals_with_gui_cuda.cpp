@@ -419,12 +419,8 @@ const int FRACTAL_VERSION{1};
 std::string key_version =
     std::string{"fractal_key_version_"} + to_string(FRACTAL_VERSION);
 
-#ifdef _WINDOWS
-std::string keys_location = std::string{".."} + separator + std::string{".."} +
-                            separator + std::string{".."} + separator;
-#else
-std::string keys_location = std::string { "" }
-#endif
+// Relative to the working directory; the build stages assets next to the exe.
+std::string keys_location = std::string{""};
 
 
 // Should be trivially_copyable/serializable
@@ -1590,7 +1586,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       }
     }
 
-    texture.loadFromImage(image);
+    if (!texture.loadFromImage(image)) cout << "texture.loadFromImage failed" << endl;
     sprite.emplace(texture);
 
     // sprite.setOrigin(800,600);
@@ -1681,7 +1677,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       }
     }
 
-    texture.loadFromImage(image);
+    if (!texture.loadFromImage(image)) cout << "texture.loadFromImage failed" << endl;
     sprite.emplace(texture);
   }
 
@@ -2357,11 +2353,7 @@ void signalLoadNextKey(shared_ptr<FractalModel> p_model,
   setGuiElementsFromModel(pgui, p_model);
 }
 
-#ifdef _WINDOWS
-std::string escape_dir = std::string{"..\\..\\..\\escape_image"};
-#else
 std::string escape_dir = std::string{"escape_image"};
-#endif
 
 int escape_count = 0;
 int escape_ix = -1;
@@ -2849,7 +2841,7 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
   struct tm *timeinfop = nullptr;
 
   time(&rawtime);
-#ifdef _WINDOWS
+#ifdef _WIN32
   struct tm timeinfo;
   localtime_s(&timeinfo, &rawtime);
   timeinfop = &timeinfo;
@@ -2870,19 +2862,12 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
   // texture.create(IMAGE_WIDTH, IMAGE_HEIGHT);
   texture.update(window);
   sf::Image screenshot = texture.copyToImage();
-  if (savename != "none")
-    screenshot.saveToFile(savename);
-  else {
-#ifdef _WINDOWS
-    screenshot.saveToFile(string{".."} + separator + string{".."} + separator +
-                          string{".."} + separator + string{"screenshots"} + separator + name +
-                          timestring +
-                          ".png");
-#else
-    screenshot.saveToFile(string{"screenshots"} + separator + name + timestring +
-                          ".png");
-#endif
-  }
+  std::string outname = (savename != "none")
+                            ? savename
+                            : string{"screenshots"} + separator + name +
+                                  timestring + ".png";
+  if (!screenshot.saveToFile(outname))
+    cout << "Failed to save screenshot: " << outname << endl;
 };
 
 int main(int argc, char **argv) {
@@ -3031,13 +3016,7 @@ int main(int argc, char **argv) {
   bool display_gui = true;
   bool display_fractal = true;
   auto pgui = make_shared<tgui::Gui>(window);
-#ifdef _WINDOWS
-  tgui::Theme theme;
-  theme.load("..\\..\\..\\themes\\Black.txt");
-  tgui::Theme::setDefault(make_shared<tgui::Theme>(theme));
-#else
   tgui::Theme::setDefault("themes/Black.txt");
-#endif
   createGuiElements(pgui, p_model);
   updateGuiElements(pgui, p_model);
 

@@ -204,7 +204,16 @@ before moving on.
 - Move this file into the repo. Add `.gitignore` (build folders, `FractalsData/`).
 - **Verify:** the tree matches the port scope; nothing large or unwanted is committed.
 
-### M1: Windows CMake build, static, same behavior
+### M1: Windows CMake build, static, same behavior ✅
+- Done: `fractals.exe` is 10 MB. `dumpbin /dependents` shows only OPENGL32, WINMM, GDI32,
+  KERNEL32, USER32 and ADVAPI32 (no MSVC runtime, no nvcuda.dll). It renders Mandelbrot
+  the same as the old build and detects the RTX 5070.
+- Paths are temporarily relative to the working directory (assets staged next to the exe)
+  until M3.
+- Visible TGUI 1.13 difference: the interior-coloring list box now shows a scrollbar.
+- GUI testing: launch the exe, focus it, press `S`, and read the PNG it writes to
+  `screenshots/`. GDI/PrintWindow captures miss the OpenGL content.
+
 - `CMakeLists.txt`, `cmake/versions.cmake`, `CMakePresets.json`,
   `scripts/setup-windows.ps1` (check only) and `scripts/build-windows.ps1`.
 - FetchContent SFML 3.1.0 + TGUI 1.13.0, both static; `/MT`; `cudart_static`, no `-lcuda`;
