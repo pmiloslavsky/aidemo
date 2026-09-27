@@ -457,7 +457,10 @@ before moving on.
   CUDA runtime redistribution notice).
 - **Verify:** a test tag produces a Release whose files download and run.
 
-### M8: Clean-machine check → v1.0 — in progress
+### M8: Clean-machine check → v1.0 ✅
+- Done: the user chose to skip Windows Sandbox and the stock Ubuntu 22.04/24.04 checks
+  (2026-09-27). Linux coverage is the CI build and smoke test on Ubuntu 22.04 plus the
+  release binary on WSL Ubuntu 26.04. Tagged `fractals-v1.0`.
 - Windows (user's machine, as the user asked instead of Windows Sandbox): the downloaded
   `fractals-v0.9-test` exe, alone in a new folder, created `FractalsData/`, opened borderless
   full screen by default and windowed with `--windowed`, ran Mandelbrot on the GPU (~62M
