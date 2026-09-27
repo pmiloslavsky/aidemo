@@ -431,7 +431,12 @@ before moving on.
   - Log frame times for CPU vs GPU at 1440p for a few keys, and record them in the README.
   - The CI smoke render (no GPU) still takes the CPU path.
 
-### M7: Releases + docs — in progress
+### M7: Releases + docs ✅
+- Done: tag `fractals-v0.9-test` made the pre-release
+  https://github.com/pmiloslavsky/aidemo/releases/tag/fractals-v0.9-test (kept, per the user).
+  Downloaded: checksums OK; `fractals.exe` (Windows) and `fractals` (WSL Ubuntu 26.04) each
+  run from an empty folder, create `FractalsData/`, render on the RTX 5070 and give
+  byte-identical PNGs. (That release predates the `--save-and-exit` option rename.)
 - `.github/workflows/fractals-release.yml`: a `fractals-v*` tag runs `fractals.yml` (now
   also `workflow_call`), then creates the Release with `fractals.exe`, `fractals`,
   `THIRD_PARTY_NOTICES.txt` and `SHA256SUMS.txt`; the body is `RELEASE_NOTES.md`. A `-` after
@@ -444,8 +449,7 @@ before moving on.
   replace the positional `[threads]`, `save_and_exit ... [hide]`. Missing values or stray
   words print an error and the usage (exit 2). Threads are capped at 32 (`MAX_THREADS`, the
   per-thread arrays' size); CPUs with 34+ threads would have overrun them.
-- The origin and license of the escape images (copied from the old repo) is unknown;
-  hubble.jpg and jupiter.jpg look like NASA images (public domain), the rest are unclear.
+- Escape images: the user confirmed they are all public images; they stay embedded.
 - A `fractals-v*` tag creates a GitHub Release with `fractals.exe` + the Linux
   `fractals`.
 - README: download/run steps, SmartScreen note, controls, build instructions.

@@ -178,4 +178,5 @@ run on the CPU ("Cuda N/A").
 
 The executable includes SFML, TGUI, FreeType, HarfBuzz, SheenBidi, stb_image, nlohmann/json,
 CMakeRC, tinycolormap and the NVIDIA CUDA runtime. Their licenses are in
-[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), which ships with each release.
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), which ships with each release. The
+coloring images in `assets/escape_images/` are public images.
