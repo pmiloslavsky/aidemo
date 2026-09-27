@@ -286,6 +286,10 @@ before moving on.
 - `--console` verified from PowerShell. PowerShell doesn't wait for a GUI-subsystem exe, so the
   prompt returns first and the output prints over it; `.\fractals.exe --console | Out-Host`
   waits. CI run 36347544190 is green; the artifacts are now just the binary.
+- The CI Linux build (with CUDA) runs in WSL Ubuntu 26.04 and uses the RTX 5070 through
+  the WSL driver (`/usr/lib/wsl/lib/libcuda.so`); the user confirmed CUDA works there.
+  WSLg once showed no Linux windows at all (only a "[WARN:COPY MODE]" stub); even a plain
+  X11 window didn't appear. That was WSLg itself, and restarting WSL fixed it.
 - SFML opens the X11 display during static initialization, so on Linux the app aborts
   before `main` without a display. The M5 CI smoke test needs `xvfb`.
 - `FractalsData/` next to the exe, resolved from the exe path, with the per-user fallback
