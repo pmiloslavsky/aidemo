@@ -339,8 +339,11 @@ before moving on.
 - **Verify:** save → load round trip reproduces the same image; a key saved on Windows
   renders the same on Linux (CI); the movie script generates frames.
 
-### M5: CUDA-optional hardening
-- Local status: `cuda_init()` logs the runtime and driver versions and the GPU, and returns
+### M5: CUDA-optional hardening ✅
+- Done: CI run 36351081240 is green. On both runners (no GPU) the smoke test logs
+  "CUDA: no NVIDIA driver, using CPU threads" and renders the key (Linux under xvfb,
+  Windows with Mesa llvmpipe).
+- `cuda_init()` logs the runtime and driver versions and the GPU, and returns
   false, logging why, for no driver, no GPU (`CUDA_VISIBLE_DEVICES=-1` checked), a driver
   too old for CUDA 12, or no kernel for the GPU (checked with `cudaFuncGetAttributes`).
   CUDA errors are logged and returned instead of calling `exit()`. The render thread then
