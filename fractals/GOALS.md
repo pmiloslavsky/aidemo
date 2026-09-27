@@ -232,7 +232,13 @@ before moving on.
   system DLLs. The app runs on the RTX 5070, and a `save_and_exit` render matches the old
   build.
 
-### M2: CI early (Windows + Linux build only) — in progress
+### M2: CI early (Windows + Linux build only) ✅
+- Done: both CI jobs are green (run 36346384540). Windows installs CUDA 12.9 and builds
+  in about 4.5 min; Linux about 1 min with a warm cache. Artifacts: 8 MB (Windows) and
+  10 MB (Linux, 15 MB unzipped), zipped. The CI Linux binary needs at most GLIBC_2.34 and
+  loads on Ubuntu 26.04 (WSL). SFML loads libGL at runtime.
+- Follow-up: GitHub warns that actions/checkout, cache and upload-artifact v4 run on the
+  deprecated Node 20; bump them when Node 24 versions are out.
 - Local status: `linux-release-cpu-only` builds in WSL Ubuntu 26.04 (GCC 15) with no
   source changes (the M1 port already fixed the GCC issues). `readelf -d` shows only
   X11, Xrandr, Xcursor, Xi, udev, libm, libc and the loader. `scripts/check-linux-deps.sh`
