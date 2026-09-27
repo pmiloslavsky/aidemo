@@ -2,16 +2,15 @@
 #include <vector>
 #include "fractals.h"
 
-//if it returns zero, you have no cuda devices
-int cuda_info(void);
+// Looks for a usable NVIDIA GPU and logs what it finds (runtime and driver
+// versions, GPU name). Returns false, after logging why, when there is no
+// driver, no GPU, a driver too old for this build, or no kernel for the GPU;
+// the app then renders with CPU threads.
+bool cuda_init(void);
 
-//basic test program
-int cuda_vec_add(unsigned int w, unsigned int h);
-
-//a prototype of stuff similar to what i need for buddhabrot
-int cuda_generate_hits_prototype(unsigned int w, unsigned int h);
-
-//The actual nebulabrot implementation
+// The actual nebulabrot implementation: one short GPU launch of random
+// samples. Returns 0, or a CUDA error code (already logged) after which the
+// caller should stop using CUDA for the session.
 int cuda_generate_buddhabrot_hits(unsigned int w, unsigned int h,
                                   SupportedFractal & frac,
 				  SampleStats & stats,

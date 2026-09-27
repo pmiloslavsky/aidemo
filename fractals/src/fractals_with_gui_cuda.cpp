@@ -5,6 +5,7 @@
 #include <TGUI/TGUI.hpp>
 #include <TGUI/Backend/SFML-Graphics.hpp>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -1279,9 +1280,17 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
           (cuda_detected == true)) {
         SampleStats cudastats{0, 0, 0, 0};
         // device kernel doesnt have context of model object or this c file
-        cuda_generate_buddhabrot_hits(IMAGE_WIDTH, IMAGE_HEIGHT,
-                                      FRAC[current_fractal], cudastats, redHits,
-                                      greenHits, blueHits);
+        if (cuda_generate_buddhabrot_hits(IMAGE_WIDTH, IMAGE_HEIGHT,
+                                          FRAC[current_fractal], cudastats, redHits,
+                                          greenHits, blueHits) != 0) {
+          // Already logged; the other threads pick up on the CPU path
+          cout << "CUDA failed, using CPU threads for the rest of this session" << endl;
+          cuda_detected = false;
+          for (auto *hits : {&redHits, &greenHits, &blueHits}) {
+            hits->assign(IMAGE_WIDTH, vector<unsigned long long>(IMAGE_HEIGHT, 0));
+          }
+          continue;
+        }
         stats[current_fractal].total += cudastats.total;
         stats[current_fractal].rejected += cudastats.rejected;
         stats[current_fractal].in_set += cudastats.in_set;
@@ -1333,40 +1342,8 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
   }  // createBuddhabrot
 
-  void cudaPresent() {
-    int count = cuda_info();
-
-    if (count == 0) {
-      cuda_detected = false;
-      return;
-    }
-    cuda_detected = true;
-  }
-
-  void cudaTest() {
-    int count = cuda_info();
-
-    if (count == 0) {
-      cuda_detected = false;
-      return;
-    }
-    cuda_detected = true;
-
-    // test some cuda vector addition and return of sum vector to host
-    // just to see cuda is working
-    cuda_vec_add(IMAGE_WIDTH, IMAGE_HEIGHT);
-
-    // test a prototype API thats very much like the final one we have to write
-    // but doesnt have all the details
-    cuda_generate_hits_prototype(IMAGE_WIDTH, IMAGE_HEIGHT);
-
-    // test some cuda hit generation and return of hits to the host - this is
-    // the real API used by threads
-    SampleStats fakestat;
-    cuda_generate_buddhabrot_hits(IMAGE_WIDTH, IMAGE_HEIGHT,
-                                  FRAC[current_fractal], fakestat, redTrailHits,
-                                  greenTrailHits, blueTrailHits);
-  }
+  // Uses the GPU only if cuda_init finds a working one (it logs why not)
+  void cudaPresent() { cuda_detected = cuda_init(); }
 
   void saveBuddhabrotTrailToColor(
       vector<complex<double>> &trail,
@@ -1862,7 +1839,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
  public:
   unsigned int current_fractal;
-  bool cuda_detected;
+  std::atomic<bool> cuda_detected;  // cleared by a render thread if CUDA fails
   unsigned int view_width;
   unsigned int view_height;
   unsigned long long maxred = 0;
@@ -2788,8 +2765,9 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   current->setText("Threads: " + to_string(p_model->num_threads));
 
   current = pgui->get<tgui::Label>("cuda_label");
-  if ((FRAC[p_model->current_fractal].cuda_mode == true) &&
-      (p_model->cuda_detected == true))
+  if (p_model->cuda_detected == false)
+    current->setText("Cuda N/A");  // no usable GPU, or CUDA failed (see the log)
+  else if (FRAC[p_model->current_fractal].cuda_mode == true)
     current->setText("Cuda Running");
   else
     current->setText("Cuda Off");
@@ -3074,7 +3052,7 @@ int main(int argc, char **argv) {
       make_shared<FractalModel>(screenDimensions.x, screenDimensions.y);
 
   // p_model->cudaTest();
-  if (!save_and_exit) p_model->cudaPresent();
+  p_model->cudaPresent();
 
   // Create the worker threads:
   cout << "Machine supports " << thread::hardware_concurrency()

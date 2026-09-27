@@ -21,7 +21,9 @@ $sudo apt-get update
 $sudo apt-get install -y --no-install-recommends \
   build-essential git ca-certificates wget cmake ninja-build python3-pip \
   libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev \
-  libgl-dev libegl-dev
+  libgl-dev libegl-dev \
+  xvfb xauth libgl1-mesa-dri
+# (xvfb, xauth and Mesa's software OpenGL run the headless smoke test)
 
 # CMakePresets.json needs CMake >= 3.26; Ubuntu 22.04 ships 3.22.
 version_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }

@@ -70,6 +70,16 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/build-linux.sh ${{ matrix.preset }}
 
+      # The runners have no GPU, so this also exercises the no-driver fallback
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/smoke-test.ps1 -Exe build/${{ matrix.preset }}/bin/${{ matrix.binary }}
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/smoke-test.sh build/${{ matrix.preset }}/bin/${{ matrix.binary }}
+
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

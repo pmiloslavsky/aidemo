@@ -215,7 +215,8 @@ before moving on.
   the screen, so the rest of the desktop stays visible. The fractal still renders at full
   size and is scaled down; mouse coordinates are mapped back.
 - GUI testing uses computer use. A per-user Start-menu shortcut "Fractals" makes the dev
-  exe grantable. Before each key, click the canvas and wait 1 s.
+  exe grantable. Click the canvas before a key so the window has focus. (Buddhabrot
+  starts with CUDA on, so the first `c` turns it off; keys are not lost.)
 - CUDA Buddhabrot checked interactively on the RTX 5070: `c` switches to "Cuda Running"
   and the image builds with the same structure as the CPU render.
 - Python 3.14 (via the Python install manager) is installed on the dev machine for the
@@ -339,6 +340,30 @@ before moving on.
   renders the same on Linux (CI); the movie script generates frames.
 
 ### M5: CUDA-optional hardening
+- Local status: `cuda_init()` logs the runtime and driver versions and the GPU, and returns
+  false, logging why, for no driver, no GPU (`CUDA_VISIBLE_DEVICES=-1` checked), a driver
+  too old for CUDA 12, or no kernel for the GPU (checked with `cudaFuncGetAttributes`).
+  CUDA errors are logged and returned instead of calling `exit()`. The render thread then
+  turns CUDA off for the session and restores the CPU hit buffers. Detection now also runs
+  in `save_and_exit`, which only matters for Buddhabrot until M6. The status line shows
+  "Cuda N/A" when there is no usable GPU.
+- Kernel: the `trail[10000]` array (160 KB of local memory per thread) and its 10000
+  iteration cap are gone. Each orbit is iterated twice instead (test, then plot); only
+  escaping orbits, which are short, pay for the second pass. Hit and stats buffers stay on
+  the GPU and are zeroed each call. The stats buffer was never zeroed before, so the GPU
+  stats started from garbage. The grid is 4 blocks per SM (was 32 blocks for 48 SMs): about
+  195k samples/s against 84k before on the RTX 5070.
+- Watchdog: the samples per thread adapt so each launch takes about 200 ms (measured
+  100–300 ms). All blocks run in one wave, so a launch lasts about one thread's worst-case
+  orbits. One sample at red=10000 takes about 100 ms, so the ~2 s limit is only at risk
+  above roughly 150k iterations; the log warns when a one-sample launch exceeds 1 s.
+- Removed the unused test and prototype kernels (`cuda_vec_add`, `cudaTest`, ...).
+- Smoke test: `tests/smoke/mandelbrot.json` plus `scripts/smoke-test.{sh,ps1}`. The binary
+  is copied into an empty folder and renders the key; the test checks the PNG,
+  `changed_key.json`, the log's CUDA line and the extracted assets. It passes locally on
+  Windows with and without `CUDA_VISIBLE_DEVICES=-1`, and on Linux (WSL, CPU-only build).
+  Only a Mandelbrot key: in `save_and_exit`, probabilistic fractals never count as done.
+- Not tested: a real CUDA failure in the middle of a session.
 - A missing driver, no NVIDIA GPU or a CUDA error falls back to CPU threads with a log
   message instead of crashing.
 - CI smoke test: the no-GPU runners run `save_and_exit` headless (Linux under `xvfb`)

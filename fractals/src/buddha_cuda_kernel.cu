@@ -1,468 +1,142 @@
 #include "buddha_cuda_kernel.h"
+#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <complex>
 #include <iostream>
-#include <random>
 #include <string>
-#include <utility>
 
 #include <curand_kernel.h>
-#include <ctime>
 #include <cuComplex.h>
 
 //emacs M-X c++-mode
 
-//With cuda we need to check return codes often
-#define PRINT_ON_SUCCESS (0)
-
-void checkError(cudaError_t code, char const * func, const char *file, const int line, bool abort)
-{
-    if (code != cudaSuccess) 
-    {
-        const char * errorMessage = cudaGetErrorString(code);
-        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
-                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
-        if (abort){
-            cudaDeviceReset();
-            exit(code);
-        }
-    }
-    else if (PRINT_ON_SUCCESS)
-    {
-        const char * errorMessage = cudaGetErrorString(code);
-        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
-                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
-    }
-}
- 
-void checkLastError(char const * func, const char *file, const int line, bool abort)
-{
-    cudaError_t code = cudaGetLastError();
-    if (code != cudaSuccess)
-    {
-        const char * errorMessage = cudaGetErrorString(code);
-        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
-                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
-        if (abort) {
-            cudaDeviceReset();
-            exit(code);
-        }
-    }
-    else if (PRINT_ON_SUCCESS)
-    {
-        const char * errorMessage = cudaGetErrorString(code);
-        std::cerr << "CUDA error returned from \"" << func << "\" at " << file << ":" << line
-                  << ", Error code: " << (int)code << " (" << errorMessage << ")" << std::endl;
-    }
-}
-
-
-
-// To be used around calls that return an error code, ex. cudaDeviceSynchronize or cudaMallocManaged
-void checkError(cudaError_t code, char const * func, const char *file, const int line, bool abort = true);
-#define checkCUDAError(val) { checkError((val), #val, __FILE__, __LINE__); }    // in-line regular function
-#define checkCUDAError2(val) check((val), #val, __FILE__, __LINE__) // typical macro 
- 
-// To be used after calls that do not return an error code, ex. kernels to check kernel launch errors
-void checkLastError(char const * func, const char *file, const int line, bool abort = true);
-#define checkLastCUDAError(func) { checkLastError(func, __FILE__, __LINE__); }
-#define checkLastCUDAError_noAbort(func) { checkLastError(func, __FILE__, __LINE__, 0); }
- 
 using namespace std;
 
-void cudaPrintDeviceProperties(cudaDeviceProp & devProp) {
-    // std::cout rather than printf so the output reaches fractals.log
-    cout << "Major revision number:         " << devProp.major << "\n";
-    cout << "Minor revision number:         " << devProp.minor << "\n";
-    cout << "Name:                          " << devProp.name << "\n";
-    cout << "Total global memory:           " << devProp.totalGlobalMem << "\n";
-    cout << "Total shared memory per block: " << devProp.sharedMemPerBlock << "\n";
-    cout << "Total registers per block:     " << devProp.regsPerBlock << "\n";
-    cout << "Warp size:                     " << devProp.warpSize << "\n";
-    cout << "Maximum memory pitch:          " << devProp.memPitch << "\n";
-    cout << "Maximum threads per block:     " << devProp.maxThreadsPerBlock << "\n";
-    for (int i = 0; i < 3; ++i)
-    cout << "Maximum dimension " << i << " of block:  " << devProp.maxThreadsDim[i] << "\n";
-    for (int i = 0; i < 3; ++i)
-    cout << "Maximum dimension " << i << " of grid:   " << devProp.maxGridSize[i] << "\n";
-    cout << "Clock rate:                    " << devProp.clockRate << "\n";
-    cout << "Total constant memory:         " << devProp.totalConstMem << "\n";
-    cout << "Texture alignment:             " << devProp.textureAlignment << "\n";
-    cout << "Concurrent copy and execution: " << (devProp.deviceOverlap ? "Yes" : "No") << "\n";
-    cout << "Number of multiprocessors:     " << devProp.multiProcessorCount << "\n";
-    cout << "Kernel execution timeout:      " << (devProp.kernelExecTimeoutEnabled ? "Yes" : "No") << endl;
+// Logs a failed CUDA call. Errors are returned to the caller, which switches
+// the app to CPU threads for the rest of the session; nothing here exits.
+static cudaError_t logCudaError(cudaError_t code, const char *call, const char *file, int line) {
+  cerr << "CUDA error " << (int)code << " (" << cudaGetErrorString(code) << ") from " << call
+       << " at " << file << ":" << line << endl;
+  return code;
 }
 
-int cuda_info() {
-  int nDevices = 0;
-  cudaGetDeviceCount(&nDevices);
+#define CUDA_TRY(call)                                                     \
+  do {                                                                     \
+    cudaError_t err_ = (call);                                             \
+    if (err_ != cudaSuccess) return logCudaError(err_, #call, __FILE__, __LINE__); \
+  } while (0)
 
-  if (nDevices == 0) {
-    cout << "No CUDA Found" << endl;
-  }
-  else
-  {
-    for (int i = 0; i < nDevices; i++) {
-      cudaDeviceProp prop;
-      cudaGetDeviceProperties(&prop, i);
-      cudaPrintDeviceProperties(prop);
-    }
-  }
-
-  return nDevices;
+static string cudaVersionString(int v) {
+  return to_string(v / 1000) + "." + to_string((v % 1000) / 10);
 }
-
-
-__global__ void vec_add_kernel(float *a, float *b, float *c, int n) {
-    int i = threadIdx.x + blockDim.x * blockIdx.x;
-    if (i < n) c[i] = a[i] + b[i];
-}
-
-//Simple Test to see things are working
-int cuda_vec_add(unsigned int w, unsigned int h) {
-  cout << "CUDA Test: vector add" << endl;
-  const int n = w*h;
-
-  vector<float> h_a(n, 1.1f);
-  vector<float> h_b(n, 2.2f);
-  vector<float> h_c(n, 0.0f);
-
-  float *d_a, *d_b, *d_c;
-  cudaMalloc(&d_a, n*sizeof(float));
-  cudaMalloc(&d_b, n*sizeof(float));
-  cudaMalloc(&d_c, n*sizeof(float));
-
-  cudaMemcpy(d_a, &h_a[0], n*sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_b, &h_b[0], n*sizeof(float), cudaMemcpyHostToDevice);
-
-  vec_add_kernel<<<((n-1)*256)/256 + 1,256>> >(d_a, d_b, d_c, n);
-
-  cudaMemcpy(&h_c[0], d_c, n*sizeof(float), cudaMemcpyDeviceToHost);
-
-  cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
-
-  cout << "First and last elements of vector should be 3.3: " << h_c[0] << " " << h_c[w*h - 1] << endl;
-  
-  return 0;
-}
-
-
-#if 0
-__device__ bool skipInSettest(complex<double> sample) {
-    if ((abs(sample - complex<double>(-1, 0)) < 0.25) ||
-        (abs(1.0 - sqrt(1.0 - 4.0 * sample))) < 1.0)
-      return true;
-    return false;
-  }
-#endif
-
-
-//prototype of what I will actually need
-//2D array on device is one block of memory
-__global__ void generate_hits_prototype_kernel(unsigned long long *rH, int w, int h) {
-  int i = threadIdx.x + blockDim.x * blockIdx.x; //dim is 1 and tix is 1
-  
-  if (i >= h*w)
-    return;
-
-  //curandState state;
-  curandStateMRG32k3a state;
-  curand_init((unsigned long long)clock() + i, 0, 0, &state);
-
-  //generate enough samples to overcome cuda overhead
-  for (int sample_ix = 0; sample_ix < 1000; ++sample_ix)
-  {
-    double pr = curand_uniform_double (&state);
-    double pi = curand_uniform_double (&state);
-
-    //scale the random numbers
-    pr = -2 + 3.0 *pr;
-    pi = -1 + 2.0 *pi;
-
-    cuDoubleComplex p = make_cuDoubleComplex(pr, pi);
-    cuDoubleComplex c = cuCmul(p, p);
-
-    //STL doesnt compile on devices
-    //complex<double> sample(0.0,0.0);
-    //if (true == skipInSettest(sample))
-    //  printf("complex works");
-
-    //do some rejection testing sort of like what we need for fractals
-    
-    c = cuCadd(cuCmul(c, c), p);
-
-    if (cuCabs(c) < 0.5)
-    {
-      //See which box to put the hit in
-      double minx = -2.0;
-      double maxx = 1.0;
-      double miny = -1.0;
-      double maxy = 1.0;
-      if ((cuCreal(c) <= maxx) && (cuCreal(c) >= minx) && (cuCimag(c) <= maxy) &&
-          (cuCimag(c) >= miny)) {
-        int x = ((cuCreal(c) - minx) * h) /
-            (maxx - minx);
-        int y = ((cuCimag(c) - miny) * w) /
-            (maxy - miny);
-	int ii = x + w*y;
-
-	//printf("%d %f %f\n",i,cuCreal(c),cuCimag(c));
-	if (ii < h*w)
-	  atomicAdd(&rH[x + w*y], 1); //need atomics here -> in practice collisions should be very rare
-      }
-    }
-    else
-      continue;
-
-  }
-}
-
-int cuda_generate_hits_prototype(unsigned int w, unsigned int h)
-{
-  cout << "CUDA Test: generate buddhabrot hits prototype" << endl;
-  auto start = chrono::high_resolution_clock::now();
-  vector<unsigned long long> redHits;
-
-  redHits.resize(w*h,0);
-
-
-
-  //Try several modes of parallelization
-  //Mode 1
-  unsigned long long * drH;
-
-  checkCUDAError(cudaMalloc(&drH, w*h*sizeof(redHits[0])));
-  
-  //copy from host to cuda memory
-  
-  checkCUDAError(cudaMemcpy(drH, &redHits[0], w*h*sizeof(redHits[0]), cudaMemcpyHostToDevice));
-  
-  generate_hits_prototype_kernel<<<256,256>>>(drH, w, h);
-  
-  checkLastCUDAError_noAbort("kernelA");		   
-  
-  checkCUDAError(cudaMemcpy(&redHits[0], drH, w*h*sizeof(redHits[0]), cudaMemcpyDeviceToHost));
-     
-  checkCUDAError(cudaFree(drH));
-  
-  auto end = chrono::high_resolution_clock::now();
-  //cout << "sample time " << tix << " " << chrono::duration_cast<chrono::milliseconds>(end - start).count() << " ms" << endl; 
-
-   unsigned long long  hitsum = 0;
-   for (auto e: redHits) {
-       hitsum += e; }
-
-   auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
-   cout << "cuda generated pseudo hits using execution mode <<<256,256>>>: " << hitsum << " in " << duration <<
-     " ms. hits per second: " <<  1000*hitsum/duration << endl;
-
-   //Mode 2
-   checkCUDAError(cudaMalloc(&drH, w*h*sizeof(redHits[0])));
-  
-   //copy from host to cuda memory
-   
-   checkCUDAError(cudaMemcpy(drH, &redHits[0], w*h*sizeof(redHits[0]), cudaMemcpyHostToDevice));
-  
-   generate_hits_prototype_kernel<<<256*256,1>>>(drH, w, h);
-   
-   checkLastCUDAError_noAbort("kernelA");		   
-   
-   checkCUDAError(cudaMemcpy(&redHits[0], drH, w*h*sizeof(redHits[0]), cudaMemcpyDeviceToHost));
-   
-   checkCUDAError(cudaFree(drH));
-  
-   end = chrono::high_resolution_clock::now();
-   //cout << "sample time " << tix << " " << chrono::duration_cast<chrono::milliseconds>(end - start).count() << " ms" << endl; 
-   
-   hitsum = 0;
-   for (auto e: redHits) {
-     hitsum += e; }
-
-   duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
-   cout << "cuda generated pseudo hits using execution mode <<<256*256,1>>>: " << hitsum << " in " << duration <<
-       " ms. hits per second: " <<  1000*hitsum/duration << endl;
-
-   //Mode 3 Doesnt work
-   // checkCUDAError(cudaMalloc(&drH, w*h*sizeof(redHits[0])));
-  
-   // //copy from host to cuda memory
-   
-   // checkCUDAError(cudaMemcpy(drH, &redHits[0], w*h*sizeof(redHits[0]), cudaMemcpyHostToDevice));
-  
-   // generate_hits_prototype_kernel<<<1,256*256>>>(drH, w, h);
-   
-   // checkLastCUDAError_noAbort("kernelA");		   
-   
-   // checkCUDAError(cudaMemcpy(&redHits[0], drH, w*h*sizeof(redHits[0]), cudaMemcpyDeviceToHost));
-   
-   // checkCUDAError(cudaFree(drH));
-  
-   // end = chrono::high_resolution_clock::now();
-   // //cout << "sample time " << tix << " " << chrono::duration_cast<chrono::milliseconds>(end - start).count() << " ms" << endl; 
-   
-   // hitsum = 0;
-   // for (auto e: redHits) {
-   //   hitsum += e; }
-
-   // duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
-   // cout << "cuda generated red hits for <<<1,256*256>>>: " << hitsum << " in " << duration <<
-   //     " ms. hits per second: " <<  1000*hitsum/duration << endl;
-   
-   return 0;
-   
-}
-
 
 //Helper functions for buddhabrot
-__device__ void generate_buddhabrot_trail_cuda(const cuDoubleComplex &c, unsigned int iters_max,
-                                               cuDoubleComplex * p_trail, unsigned int &trail_len, unsigned long long & in, unsigned long long & out) {
-  unsigned int iter_ix = 0;
+
+// z = z^2 + c from z = 0: the number of steps until |z| >= 2, or iters_max if
+// c stays in the set that long
+__device__ unsigned int escape_iterations(cuDoubleComplex c, unsigned int iters_max) {
+  unsigned int n = 0;
   cuDoubleComplex z = make_cuDoubleComplex(0.0, 0.0);
-
-  trail_len=0;
-
-  while (iter_ix < iters_max && cuCabs(z) < 2.0) {
-    z = cuCadd(cuCmul(z,z), c);
-
-    p_trail[iter_ix] = z;
-    ++iter_ix;
+  while (n < iters_max && cuCabs(z) < 2.0) {
+    z = cuCadd(cuCmul(z, z), c);
+    ++n;
   }
+  return n;
+}
 
+// Replays the first len steps of the orbit of c and counts each point in the
+// pixel it lands on
+__device__ void plot_trail(cuDoubleComplex c, unsigned int len, int w, int h,
+                           unsigned long long *p_hits, double minx, double maxx, double miny,
+                           double maxy) {
+  int max_ix = w * h;
+  cuDoubleComplex z = make_cuDoubleComplex(0.0, 0.0);
+  for (unsigned int i = 0; i < len; ++i) {
+    z = cuCadd(cuCmul(z, z), c);
+    // if point is plottable, scale it to be on a pixel and increment the
+    // value for the pixel
+    if ((cuCreal(z) <= maxx) && (cuCreal(z) >= minx) && (cuCimag(z) <= maxy) &&
+        (cuCimag(z) >= miny)) {
+      //depending on the cast here you might get a faint gridline in your image
+      //so be careful
+      int x = ((cuCreal(z) - minx) * w) / (maxx - minx);
+      int y = ((cuCimag(z) - miny) * h) / (maxy - miny);
+
+      int ix = x + y * w;
+
+      //check for overrun
+      if (ix < max_ix) atomicAdd(&p_hits[ix], 1ULL);
+    }
+  }
+}
+
+// Plots the orbit of c if it escapes. Iterating twice (test, then plot)
+// instead of storing the orbit keeps per-thread memory tiny and puts no limit
+// on the iteration count. Returns true if c escaped.
+__device__ bool add_trail(cuDoubleComplex c, unsigned int iters_max, int w, int h,
+                          unsigned long long *p_hits, double minx, double maxx, double miny,
+                          double maxy, cuda_kernel_stats &stats) {
+  unsigned int n = escape_iterations(c, iters_max);
   // If point is in the set we wont use it to color
-  if (iter_ix == iters_max) {
-    ++in;
-    trail_len=0;
+  if (n == iters_max) {
+    ++stats.in_set;
+    return false;
   }
-  else
-  {
-    ++out;
-    trail_len = iter_ix;
-  }
-  // return trail
+  ++stats.escaped_set;
+  plot_trail(c, n, w, h, p_hits, minx, maxx, miny, maxy);
+  return true;
 }
 
 __device__ bool skipInSet_cuda(cuDoubleComplex sample) {
   // if ((abs(sample - complex<double>(-1, 0)) < 0.25) ||
   //     (abs(1.0 - sqrt(1.0 - 4.0 * sample))) < 1.0)
   //Need equivalent math in cuda TODO missing sqrt
-  if (cuCabs(cuCsub(sample,make_cuDoubleComplex(-1, 0))) < 0.25)
-      return true;
-    return false;
-}
-
-__device__ void saveBuddhabrotTrailToColor_cuda(cuDoubleComplex * p_trail, const unsigned int &trail_len, int w, int h,
-                                                unsigned long long * p_hits, double minx, double maxx, double miny, double maxy) {
-  int max_ix = w*h;
-
-  for (int i = 0; i < trail_len; ++i) {
-    // if point is plottable, scale it to be on a pixel and increment the
-    // value for the pixel
-    cuDoubleComplex c = p_trail[i];
-    if ((cuCreal(c) <= maxx) && (cuCreal(c) >= minx) && (cuCimag(c) <= maxy) &&
-        (cuCimag(c) >= miny)) {
-      //depending on the cast here you might get a faint gridline in your image
-      //so be careful
-      int x = ((cuCreal(c) - minx) * w) /
-          (maxx - minx);
-      int y = ((cuCimag(c) - miny) * h) /
-          (maxy - miny);
-      
-      int ix = x+y*w;
-      
-      //check for overrun
-      if (ix < max_ix)
-        atomicAdd(&p_hits[ix], 1);
-    }
-  }
+  if (cuCabs(cuCsub(sample, make_cuDoubleComplex(-1, 0))) < 0.25) return true;
+  return false;
 }
 
 //The actual kernel our fractals program uses
 //2D array on device is one block of memory
-__global__ void generate_hits_kernel(unsigned long long *rH, unsigned long long *gH, unsigned long long *bH, unsigned long long * p_stats,
-                                     int w, int h, 
-                                     double minx, double maxx, double miny, double maxy,
-                                     int red_max, int green_max, int blue_max) {
-  int i = threadIdx.x + blockDim.x * blockIdx.x; //dim is 1 and tix is 1
-  
-  if (i >= h*w)
-    return;
+__global__ void generate_hits_kernel(unsigned long long *rH, unsigned long long *gH,
+                                     unsigned long long *bH, unsigned long long *p_stats,
+                                     int w, int h, double minx, double maxx, double miny,
+                                     double maxy, unsigned int red_max, unsigned int green_max,
+                                     unsigned int blue_max, unsigned int samples,
+                                     unsigned long long seed) {
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
 
-  cuda_kernel_stats local_stats={0,0,0,0};
+  cuda_kernel_stats local_stats = {0, 0, 0, 0};
 
   curandState state;
-  curand_init((unsigned long long)clock() + i, 0, 0, &state);
+  curand_init(seed + i, 0, 0, &state);
 
-
-  unsigned long long max_samples = 100; //large enough to overcome thread sleep time and cuda overhead
-  for (int sample_ix = 0; sample_ix < max_samples; ++sample_ix)
-  {
-    double pr = curand_uniform_double (&state);
-    double pi = curand_uniform_double (&state);
+  for (unsigned int sample_ix = 0; sample_ix < samples; ++sample_ix) {
+    double pr = curand_uniform_double(&state);
+    double pi = curand_uniform_double(&state);
 
     local_stats.total++;
 
-    //scale the random sample    
-    pr = minx + pr*(maxx - minx);
-    pi = miny + pi*(maxy - miny);
+    //scale the random sample
+    pr = minx + pr * (maxx - minx);
+    pi = miny + pi * (maxy - miny);
 
     cuDoubleComplex sample = make_cuDoubleComplex(pr, pi);
 
-    if (true == skipInSet_cuda(sample))
-    {
+    if (true == skipInSet_cuda(sample)) {
       local_stats.rejected++;
       continue;
     }
 
-    //We need memory to hold the escape trail - could be a problem
-#define MAX_ITERS_CUDA (10000)
-    cuDoubleComplex trail[MAX_ITERS_CUDA];
-    unsigned int trail_len = 0;
-
-    if ((red_max > MAX_ITERS_CUDA) || (green_max > MAX_ITERS_CUDA) || (blue_max > MAX_ITERS_CUDA))
-    {
-      printf("CUDA: Max iteration count not supported: %d %d %d\n", red_max, green_max, blue_max);
-      return;;
-    }
-    
-
-    generate_buddhabrot_trail_cuda(sample, red_max,
-                                   &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-    saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                    rH, minx, maxx, miny, maxy);
-    if (trail_len != 0) {
-      sample = make_cuDoubleComplex(cuCreal(sample),-cuCimag(sample));
-      generate_buddhabrot_trail_cuda(sample, red_max,
-                                     &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-      saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                      rH, minx, maxx, miny, maxy);
-
-    }
-
-    generate_buddhabrot_trail_cuda(sample, green_max,
-                                   &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-    saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                    gH, minx, maxx, miny, maxy);
-    if (trail_len != 0) {
-      sample = make_cuDoubleComplex(cuCreal(sample),-cuCimag(sample));
-      generate_buddhabrot_trail_cuda(sample, green_max,
-                                     &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-      saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                      gH, minx, maxx, miny, maxy);
-
-    }
-
-    generate_buddhabrot_trail_cuda(sample, blue_max,
-                                   &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-    saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                    bH, minx, maxx, miny, maxy);
-    if (trail_len != 0) {
-      sample = make_cuDoubleComplex(cuCreal(sample),-cuCimag(sample));
-      generate_buddhabrot_trail_cuda(sample, blue_max,
-                                     &trail[0], trail_len, local_stats.in_set, local_stats.escaped_set);
-      saveBuddhabrotTrailToColor_cuda(&trail[0], trail_len, w, h,
-                                      bH, minx, maxx, miny, maxy);
-
+    // One pass per color. An escaping sample's mirror image (its conjugate)
+    // escapes too, so it is plotted as well; the next color then starts from
+    // the mirrored sample.
+    unsigned long long *hits[3] = {rH, gH, bH};
+    unsigned int iters[3] = {red_max, green_max, blue_max};
+    for (int color = 0; color < 3; ++color) {
+      if (add_trail(sample, iters[color], w, h, hits[color], minx, maxx, miny, maxy,
+                    local_stats)) {
+        sample = make_cuDoubleComplex(cuCreal(sample), -cuCimag(sample));
+        add_trail(sample, iters[color], w, h, hits[color], minx, maxx, miny, maxy, local_stats);
+      }
     }
   }
 
@@ -473,142 +147,180 @@ __global__ void generate_hits_kernel(unsigned long long *rH, unsigned long long 
   atomicAdd(&p_stats[3], local_stats.total);
 }
 
+// ---------------------------------------------------------------------------
+// Host side
+// ---------------------------------------------------------------------------
+
+static int g_sm_count = 0;  // set by cuda_init
+
+bool cuda_init() {
+  int runtime = 0, driver = 0;
+  cudaRuntimeGetVersion(&runtime);
+  cudaDriverGetVersion(&driver);  // 0 when no NVIDIA driver is installed
+  cout << "CUDA: runtime " << cudaVersionString(runtime) << ", driver "
+       << (driver ? cudaVersionString(driver) : string("not installed")) << endl;
+  if (driver == 0) {
+    cout << "CUDA: no NVIDIA driver, using CPU threads" << endl;
+    return false;
+  }
+
+  int count = 0;
+  cudaError_t err = cudaGetDeviceCount(&count);
+  if (err == cudaErrorInsufficientDriver) {
+    cout << "CUDA: the NVIDIA driver (CUDA " << cudaVersionString(driver)
+         << ") is too old for this build (needs CUDA " << runtime / 1000
+         << ".x); update the driver to use the GPU. Using CPU threads" << endl;
+    return false;
+  }
+  if (err != cudaSuccess || count == 0) {
+    cout << "CUDA: no usable NVIDIA GPU ("
+         << (err != cudaSuccess ? cudaGetErrorString(err) : "none found")
+         << "), using CPU threads" << endl;
+    return false;
+  }
+
+  cudaDeviceProp prop;
+  err = cudaGetDeviceProperties(&prop, 0);
+  if (err != cudaSuccess) {
+    logCudaError(err, "cudaGetDeviceProperties", __FILE__, __LINE__);
+    return false;
+  }
+  cout << "CUDA: GPU 0 of " << count << ": " << prop.name << ", compute " << prop.major << "."
+       << prop.minor << ", " << prop.totalGlobalMem / (1024 * 1024) << " MB, "
+       << prop.multiProcessorCount << " SMs"
+       << (prop.kernelExecTimeoutEnabled ? ", display watchdog on" : "") << endl;
+
+  // Fails if the fatbin has no code this GPU can run (older than sm_61)
+  cudaFuncAttributes attr;
+  err = cudaFuncGetAttributes(&attr, generate_hits_kernel);
+  if (err != cudaSuccess) {
+    cout << "CUDA: no kernel for compute " << prop.major << "." << prop.minor << " in this build ("
+         << cudaGetErrorString(err) << "), using CPU threads" << endl;
+    return false;
+  }
+
+  g_sm_count = prop.multiProcessorCount;
+  return true;
+}
+
+namespace {
+
+// Hit buffers stay on the GPU between calls; they're zeroed, not reallocated
+struct DeviceBuffers {
+  unsigned long long *hits[3] = {nullptr, nullptr, nullptr};
+  unsigned long long *stats = nullptr;
+  size_t pixels = 0;
+} dev;
+
+void freeBuffers() {
+  for (auto &p : dev.hits) cudaFree(p), p = nullptr;
+  cudaFree(dev.stats);
+  dev.stats = nullptr;
+  dev.pixels = 0;
+}
+
+cudaError_t ensureBuffers(size_t pixels) {
+  if (dev.pixels == pixels) return cudaSuccess;
+  freeBuffers();
+  for (auto &p : dev.hits) CUDA_TRY(cudaMalloc(&p, pixels * sizeof(unsigned long long)));
+  CUDA_TRY(cudaMalloc(&dev.stats, 4 * sizeof(unsigned long long)));
+  dev.pixels = pixels;
+  return cudaSuccess;
+}
+
+// Keeps each launch short: Windows resets the GPU if one call runs for ~2 s
+// on a GPU that drives a display. The work per launch is budgeted in orbit
+// steps, so a change of max iterations is accounted for before the launch.
+const double TARGET_LAUNCH_MS = 200.0;
+double steps_per_ms = 0;  // measured throughput; 0 until the first launch
+unsigned long long launches = 0;
+
+cudaError_t runKernel(unsigned int w, unsigned int h, SupportedFractal &frac, SampleStats &stats,
+                      vector<unsigned long long> host[3]) {
+  size_t pixels = (size_t)w * h;
+  CUDA_TRY(ensureBuffers(pixels));
+  for (auto p : dev.hits) CUDA_TRY(cudaMemset(p, 0, pixels * sizeof(unsigned long long)));
+  CUDA_TRY(cudaMemset(dev.stats, 0, 4 * sizeof(unsigned long long)));
+
+  // All blocks run at once (one wave), so a launch lasts about as long as one
+  // thread's samples; the sample count is what keeps it short.
+  const unsigned int threads_per_block = 256;
+  const unsigned int blocks = std::max(1, g_sm_count) * 4;
+  const double threads = (double)blocks * threads_per_block;
+  // Worst case per sample: every color runs to max iterations
+  double steps_per_sample = std::max(1.0, (double)frac.current_max_iters[0] +
+                                              frac.current_max_iters[1] +
+                                              frac.current_max_iters[2]);
+  unsigned int samples = 1;
+  if (steps_per_ms > 0)
+    samples = (unsigned int)std::clamp(TARGET_LAUNCH_MS * steps_per_ms / (threads * steps_per_sample),
+                                       1.0, 1000.0);
+
+  auto start = chrono::steady_clock::now();
+  unsigned long long seed = (unsigned long long)start.time_since_epoch().count() + launches;
+  generate_hits_kernel<<<blocks, threads_per_block>>>(
+      dev.hits[0], dev.hits[1], dev.hits[2], dev.stats, (int)w, (int)h, frac.xMinMax[0],
+      frac.xMinMax[1], frac.yMinMax[0], frac.yMinMax[1], frac.current_max_iters[0],
+      frac.current_max_iters[1], frac.current_max_iters[2], samples, seed);
+  CUDA_TRY(cudaGetLastError());
+  CUDA_TRY(cudaDeviceSynchronize());
+  double ms = std::max(0.01, chrono::duration<double, milli>(chrono::steady_clock::now() - start).count());
+  steps_per_ms = threads * samples * steps_per_sample / ms;
+  if (launches++ < 3)
+    cout << "CUDA Buddhabrot: " << blocks << "x" << threads_per_block << " threads, " << samples
+         << " samples each, " << (int)ms << " ms" << endl;
+  if (samples == 1 && ms > 1000)
+    cout << "CUDA Buddhabrot: one sample per thread took " << (int)ms
+         << " ms; with more iterations Windows may reset the GPU (~2 s limit)" << endl;
+
+  for (int c = 0; c < 3; ++c) {
+    host[c].resize(pixels);
+    CUDA_TRY(cudaMemcpy(host[c].data(), dev.hits[c], pixels * sizeof(unsigned long long),
+                        cudaMemcpyDeviceToHost));
+  }
+  cuda_kernel_stats cuda_stats;
+  CUDA_TRY(cudaMemcpy(&cuda_stats, dev.stats, sizeof(cuda_stats), cudaMemcpyDeviceToHost));
+  stats.total = cuda_stats.total;
+  stats.rejected = cuda_stats.rejected;
+  stats.in_set = cuda_stats.in_set;
+  stats.escaped_set = cuda_stats.escaped_set;
+  return cudaSuccess;
+}
+
+}  // namespace
 
 //The main app will have one thread that will:
 //1) Check for a future asking for thread termination
-//2) Spawn a cuda kernel that takes about a second to run
+//2) Run a short cuda kernel (see TARGET_LAUNCH_MS)
 //3) move the resulting Hits to the model under mutex
 //4) back to 1)
 //input: xyrange of fractal   pixel w and h  color max iterations
 //output: stats
-
-//kernel: move zeroed hits from host to device, skipInSet, generate trail, save trail in hits,
-//move hits from device to host
-
 int cuda_generate_buddhabrot_hits(unsigned int w, unsigned int h, SupportedFractal &frac,
-				  SampleStats & stats,
+                                  SampleStats &stats,
                                   vector<vector<long long unsigned int>> &redHits,
                                   vector<vector<long long unsigned int>> &greenHits,
-                                  vector<vector<long long unsigned int>> &blueHits)
-{
-  //spawn a kernel that takes ~ a second to run
-
-  //cout << "CUDA Main: generate buddhabrot hits of all 3 colors" << endl;
-  auto start = chrono::high_resolution_clock::now();
-
+                                  vector<vector<long long unsigned int>> &blueHits) {
   //Zero out passed in hits
   redHits.resize(0);
   greenHits.resize(0);
   blueHits.resize(0);
 
+  //1D arrays of hits for cuda (its not good with C++ 2D vector<vector<>> style)
+  vector<unsigned long long> host[3];
+  cudaError_t err = runKernel(w, h, frac, stats, host);
+  if (err != cudaSuccess) {
+    freeBuffers();
+    return (int)err;
+  }
 
-  //Create 1D arrays of hits for cuda (its not good with C++ 2D vector<vector<>> style)
-  vector<unsigned long long> rH;
-  rH.resize(w*h,0);
-  vector<unsigned long long> gH;
-  gH.resize(w*h,0);
-  vector<unsigned long long> bH;
-  bH.resize(w*h,0);
-
-  cuda_kernel_stats cuda_stats;
-
-
-  unsigned long long * drH;
-  unsigned long long * dgH;
-  unsigned long long * dbH;
-
-  unsigned long long * dstats;
-
-  checkCUDAError(cudaMalloc(&drH, w*h*sizeof(unsigned long long)));
-  checkCUDAError(cudaMalloc(&dgH, w*h*sizeof(unsigned long long)));
-  checkCUDAError(cudaMalloc(&dbH, w*h*sizeof(unsigned long long)));
-  checkCUDAError(cudaMalloc(&dstats, 4*sizeof(unsigned long long)));
-  
-  //copy from host to cuda memory
-  
-  checkCUDAError(cudaMemcpy(drH, &rH[0], w*h*sizeof(unsigned long long), cudaMemcpyHostToDevice));
-  checkCUDAError(cudaMemcpy(dgH, &gH[0], w*h*sizeof(unsigned long long), cudaMemcpyHostToDevice));
-  checkCUDAError(cudaMemcpy(dbH, &bH[0], w*h*sizeof(unsigned long long), cudaMemcpyHostToDevice));
-
-  //64,256 is pretty fast
-  generate_hits_kernel<<<32,256>>>(drH, dgH, dbH, dstats,
-				  w, h,
-				  frac.xMinMax[0], frac.xMinMax[1], frac.yMinMax[0], frac.yMinMax[1],
-				  frac.current_max_iters[0], frac.current_max_iters[1], frac.current_max_iters[2]);
-  
-  checkLastCUDAError_noAbort("kernel for buddhabrot");		   
-  
-  checkCUDAError(cudaMemcpy(&rH[0], drH, w*h*sizeof(unsigned long long), cudaMemcpyDeviceToHost));
-  checkCUDAError(cudaMemcpy(&gH[0], dgH, w*h*sizeof(unsigned long long), cudaMemcpyDeviceToHost));
-  checkCUDAError(cudaMemcpy(&bH[0], dbH, w*h*sizeof(unsigned long long), cudaMemcpyDeviceToHost));
-
-  checkCUDAError(cudaMemcpy(&cuda_stats, dstats, 4*sizeof(unsigned long long), cudaMemcpyDeviceToHost));
-     
-  checkCUDAError(cudaFree(drH));
-  checkCUDAError(cudaFree(dgH));
-  checkCUDAError(cudaFree(dbH));
-  checkCUDAError(cudaFree(dstats));
-
-  stats.total = cuda_stats.total;
-  stats.rejected = cuda_stats.rejected;
-  stats.in_set = cuda_stats.in_set;
-  stats.escaped_set = cuda_stats.escaped_set;
-
-  //cout << "cuda total/rejected/in_set/escaped_set " << stats.total << "/" << stats.rejected << "/" << stats.in_set << "/" << stats.escaped_set << endl;
-  
-  auto end = chrono::high_resolution_clock::now();
-  //cout << "sample time " << tix << " " << chrono::duration_cast<chrono::milliseconds>(end - start).count() << " ms" << endl; 
-
-  unsigned long long  hitsumr = 0;
-  unsigned long long  hitsumg = 0;
-  unsigned long long  hitsumb = 0;
-  for (auto e: rH) {
-    hitsumr += e; }
-  for (auto e: gH) {
-    hitsumg += e; }
-  for (auto e: bH) {
-    hitsumb += e; }
-
-  auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
-  //cout << "cuda generated rgb hits for <<<4*256,128>>>: " << hitsumr << " " << hitsumg << " " << hitsumb << " in " << duration <<
-  //  " ms.   hits per second: " <<  1000*(hitsumr+hitsumg+hitsumb)/duration << endl;
-
-
-
-
-   //Copy the 3 cuda 1D arrays into the user provided 2D arrays
-   // width and heigh may be switched
-   // The need for this code probably shows we need to redo our arrays
-   redHits.resize(w);
-   for (auto &v : redHits) v.resize(h);
-   for (unsigned int i = 0; i < w; ++i)
-   {
-     for (unsigned int j = 0; j < h; ++j) {
-       redHits[i][j] = rH[i+j*w];
-     }
-   }
-   
-   greenHits.resize(w);
-   for (auto &v : greenHits) v.resize(h);
-   for (unsigned int i = 0; i < w; ++i)
-   {
-     for (unsigned int j = 0; j < h; ++j) {
-       greenHits[i][j] = gH[i+j*w];
-     }
-   }
-   
-   blueHits.resize(w);
-   for (auto &v : blueHits) v.resize(h);
-      for (unsigned int i = 0; i < w; ++i)
-   {
-     for (unsigned int j = 0; j < h; ++j) {
-       blueHits[i][j] = bH[i+j*w];
-     }
-   }
-
-   auto realend = chrono::high_resolution_clock::now();
-   duration = chrono::duration_cast<chrono::milliseconds>(realend - end).count();
-   //cout << "1D -> 2D array copy: " << duration << " ms" << endl;
-
+  //Copy the 3 cuda 1D arrays into the user provided 2D arrays
+  vector<vector<long long unsigned int>> *out[3] = {&redHits, &greenHits, &blueHits};
+  for (int c = 0; c < 3; ++c) {
+    out[c]->resize(w);
+    for (auto &v : *out[c]) v.resize(h);
+    for (unsigned int i = 0; i < w; ++i)
+      for (unsigned int j = 0; j < h; ++j) (*out[c])[i][j] = host[c][i + j * w];
+  }
   return 0;
 }
