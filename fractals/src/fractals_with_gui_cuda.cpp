@@ -2870,6 +2870,13 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
     cout << "Failed to save screenshot: " << outname << endl;
 };
 
+// Map a window pixel to image coordinates (they differ when windowed)
+sf::Vector2i windowToImage(const sf::RenderWindow &window, sf::Vector2i pos) {
+  sf::Vector2u size = window.getSize();
+  return sf::Vector2i(pos.x * IMAGE_WIDTH / (int)size.x,
+                      pos.y * IMAGE_HEIGHT / (int)size.y);
+}
+
 int main(int argc, char **argv) {
   std::vector<std::string> argList;
   std::string savename{"no key"};
@@ -2907,8 +2914,18 @@ int main(int argc, char **argv) {
 
   sf::Vector2u screenDimensions(IMAGE_WIDTH, IMAGE_HEIGHT);
   sf::RenderWindow window;
-  window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x, screenDimensions.y)),
-                "Fractals!", sf::Style::None);  // sf::Style::Fullscreen
+  if (save_and_exit) {
+    window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x, screenDimensions.y)),
+                  "Fractals!", sf::Style::None);  // sf::Style::Fullscreen
+  } else {
+    // Interactive runs open in a 3/4-size window so the rest of the desktop
+    // stays visible. The fractal is still rendered at IMAGE_WIDTH x
+    // IMAGE_HEIGHT and scaled down; the GUI keeps its native pixel size so
+    // text stays readable. F switches to fullscreen.
+    window.create(sf::VideoMode(sf::Vector2u(screenDimensions.x * 3 / 4, screenDimensions.y * 3 / 4)),
+                  "Fractals!", sf::Style::Titlebar | sf::Style::Close);
+    window.setPosition(sf::Vector2i(0, 0));  // left edge, leave the right side free
+  }
   if (hide) window.setVisible(false);
 
   window.setKeyRepeatEnabled(false);
@@ -3162,9 +3179,10 @@ int main(int argc, char **argv) {
             // Pan
             SaveLast(p_model);
             cout << "New center: ";
-            cout << "x: " << mouseButton->position.x;
-            cout << " y: " << mouseButton->position.y << endl;
-            p_model->panFractal(mouseButton->position.x, mouseButton->position.y);
+            sf::Vector2i pos = windowToImage(window, mouseButton->position);
+            cout << "x: " << pos.x;
+            cout << " y: " << pos.y << endl;
+            p_model->panFractal(pos.x, pos.y);
             for (unsigned int tix = 0; tix < num_threads; ++tix) {
               thread_asked_to_reset[tix] = true;
             }
@@ -3173,16 +3191,18 @@ int main(int argc, char **argv) {
             if (mouseButton->button == sf::Mouse::Button::Left) {
             // Crop start
             SaveLast(p_model);
-            crop_start_x = mouseButton->position.x;
-            crop_start_y = mouseButton->position.y;
+            sf::Vector2i pos = windowToImage(window, mouseButton->position);
+            crop_start_x = pos.x;
+            crop_start_y = pos.y;
             }
         }
 
         // Crop finish
         if (const auto* mouseButton = event->getIf<sf::Event::MouseButtonReleased>()) {
             if (mouseButton->button == sf::Mouse::Button::Left) {
-            crop_end_x = mouseButton->position.x;
-            crop_end_y = mouseButton->position.y;
+            sf::Vector2i pos = windowToImage(window, mouseButton->position);
+            crop_end_x = pos.x;
+            crop_end_y = pos.y;
 
             // Hopefully this filters out menu clicks
             if (abs(crop_end_x - crop_start_x) > 10) {
@@ -3211,11 +3231,12 @@ int main(int argc, char **argv) {
             sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
 
             const auto& mouseMove = event->getIf<sf::Event::MouseMoved>();
+            sf::Vector2i movePos = windowToImage(window, mouseMove->position);
           // Hopefully this filters out menu clicks
           if (abs(crop_end_x - crop_start_x) > 10) {
             selection.setSize(
-                sf::Vector2f(abs((float)crop_start_x - mouseMove->position.x),
-                             abs((float)crop_start_y - mouseMove->position.y)));
+                sf::Vector2f(abs((float)crop_start_x - movePos.x),
+                             abs((float)crop_start_y - movePos.y)));
             selection.setFillColor(sf::Color::Transparent);
             selection.setPosition(sf::Vector2f((float)crop_start_x, (float)crop_start_y));
 

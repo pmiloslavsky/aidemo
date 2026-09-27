@@ -211,8 +211,16 @@ before moving on.
 - Paths are temporarily relative to the working directory (assets staged next to the exe)
   until M3.
 - Visible TGUI 1.13 difference: the interior-coloring list box now shows a scrollbar.
-- GUI testing: launch the exe, focus it, press `S`, and read the PNG it writes to
-  `screenshots/`. GDI/PrintWindow captures miss the OpenGL content.
+- Interactive runs open in a 1920x1080 window at the left edge of the screen, so the
+  rest of the desktop stays visible. The fractal still renders at 2560x1440 and is scaled
+  down; mouse coordinates are mapped back. `F` switches to fullscreen. `save_and_exit`
+  keeps the full-size borderless window, so its renders don't change.
+- GUI testing uses computer use. A per-user Start-menu shortcut "Fractals" makes the dev
+  exe grantable. Before each key, click the canvas and wait 1 s.
+- CUDA Buddhabrot checked interactively on the RTX 5070: `c` switches to "Cuda Running"
+  and the image builds with the same structure as the CPU render.
+- Python 3.14 (via the Python install manager) is installed on the dev machine for the
+  tools scripts.
 
 - `CMakeLists.txt`, `cmake/versions.cmake`, `CMakePresets.json`,
   `scripts/setup-windows.ps1` (check only) and `scripts/build-windows.ps1`.
