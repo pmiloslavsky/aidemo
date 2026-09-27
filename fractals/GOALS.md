@@ -284,7 +284,7 @@ before moving on.
   the same from `/proc/self/exe` (WSLg). Interactive (computer use): the theme loads, `N`
   cycles escape images including the PNG, `S` writes to `FractalsData/screenshots/`.
 - `--console` verified from PowerShell. PowerShell doesn't wait for a GUI-subsystem exe, so the
-  prompt returns first and the output prints over it; `.ractals.exe --console | Out-Host`
+  prompt returns first and the output prints over it; `.\fractals.exe --console | Out-Host`
   waits. CI run 36347544190 is green; the artifacts are now just the binary.
 - SFML opens the X11 display during static initialization, so on Linux the app aborts
   before `main` without a display. The M5 CI smoke test needs `xvfb`.
