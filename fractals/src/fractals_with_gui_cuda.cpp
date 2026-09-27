@@ -2916,6 +2916,73 @@ void save_screenshot(sf::RenderWindow &window, string name, sf::View &modelview,
     cout << "Failed to save screenshot: " << outname << endl;
 };
 
+const char *usage_text = R"(Usage: fractals [options] [threads]
+       fractals [options] save_and_exit <key.json> <out.png> [hide]
+
+Interactive fractal explorer: Mandelbrot, Julia, Buddhabrot, Newton, Nova, ...
+
+Arguments:
+  threads         number of render threads (default: CPU threads - 1)
+  save_and_exit <key.json> <out.png>
+                  render the fractal key (JSON) at 2560x1440, save the image as
+                  out.png, write the key it rendered to changed_key.json, and exit.
+                  Paths are relative to the current folder.
+  hide            with save_and_exit: keep the window hidden while rendering
+
+Options:
+  --windowed      open in a window (3/4 of the screen, at the left edge) instead
+                  of borderless full screen
+  --console       show the log in a console (Windows; on Linux it always prints)
+  -h, --help      show this help and exit
+
+Folders:
+  FractalsData/ is created next to the executable. If that folder isn't
+  writable, the per-user folder is used instead: %LOCALAPPDATA%\Fractals on
+  Windows, $XDG_DATA_HOME/fractals or ~/.local/share/fractals on Linux.
+    keys/           fractal keys (*.json): "Save Key" writes one here,
+                    "Load Next Key" loads them in name order
+    screenshots/    images saved with the s key
+    escape_images/  images for the USE_IMAGE coloring; the n key cycles through
+                    them. Add your own .jpg/.png files here.
+    themes/         GUI themes
+    fractals.log    the log of the last run
+  The defaults for themes/ and escape_images/ are built into the executable and
+  written out only when missing, so edits and additions are kept.
+
+Fractal keys (JSON):
+  A key describes one image: the fractal, its parameters, the view, coloring
+  and lighting. Every field except "fractal" is optional (a missing field gets
+  its default) and unknown fields are ignored. Names are used for enums.
+  Example:
+    {
+      "format_version": 1,
+      "fractal": "Mandelbrot_1000",
+      "max_iterations": [1000, 0, 0],
+      "power": 2.0,
+      "zconst": [0.0, 0.0],
+      "escape_radius": 2.0,
+      "view": { "x_start": -0.7636, "y_start": 0.1178, "zoom": 0.01,
+                "requested_zoom": 0.01 },
+      "coloring": { "algo": "SMOOTH", "palette": "Viridis", "cycle_size": 32,
+                    "reflect_palette": false },
+      "lighting": { "pos_r": 1.0, "pos_i": 0.0, "angle": 45.0, "height": 1.5 },
+      "interior": { "algo": "SOLID", "palette": "UF16", "cycle_size": 256 }
+    }
+  fractal:    a name from the Fractal menu (e.g. Julia, Buddhabrot)
+  view:       x_start/y_start is the top-left corner in fractal coordinates;
+              zoom 1 shows the fractal's full default range, smaller zooms in.
+              When requested_zoom differs, the view zooms about its center.
+  coloring:   algo MULTICYCLE, SMOOTH, USE_IMAGE or SHADOW_MAP; palette Parula,
+              Heat, Jet, Turbo, Hot, Gray, Magma, Inferno, Plasma, Viridis,
+              Cividis, Github, Cubehelix or UF16
+  interior:   algo SOLID, MULTICYCLE, USE_IMAGE, TRIG, TRIG2, DIST, DIST2 or TEMP
+  tools/make_fractal_movies.py animates a key into a GIF and MP4s.
+
+While running: the Help menu lists the keys (c: CUDA on/off, s: screenshot,
+z: undo zoom, e: exit, ...). The mouse wheel zooms, the right button recenters
+and dragging with the left button zooms to the selection.
+)";
+
 // Map a window pixel to image coordinates (they differ when windowed)
 sf::Vector2i windowToImage(const sf::RenderWindow &window, sf::Vector2i pos) {
   sf::Vector2u size = window.getSize();
@@ -2931,10 +2998,12 @@ int main(int argc, char **argv) {
   save_and_exit = false;
   hide = false;
 
-  // Options start with "--" and may appear anywhere; the rest keep their old
+  // Options start with "-" and may appear anywhere; the rest keep their old
   // positions: [threads] or save_and_exit <key> <png> [hide]
   bool console = false;
   bool windowed = false;
+  bool help = false;
+  std::string bad_option;
   argList.push_back(argv[0]);
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -2942,8 +3011,20 @@ int main(int argc, char **argv) {
       console = true;
     else if (arg == "--windowed")
       windowed = true;
+    else if (arg == "-h" || arg == "--help")
+      help = true;
+    else if (arg.size() > 1 && arg[0] == '-')
+      bad_option = arg;
     else
       argList.push_back(arg);
+  }
+
+  if (help || !bad_option.empty()) {
+    runtime::openConsole();  // the Windows exe has no console of its own
+    if (!bad_option.empty()) cout << "unknown option: " << bad_option << "\n\n";
+    cout << usage_text;
+    cout.flush();
+    return bad_option.empty() ? 0 : 2;
   }
 
   if (console) runtime::openConsole();

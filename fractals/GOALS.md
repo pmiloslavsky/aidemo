@@ -369,6 +369,9 @@ before moving on.
   failure once, and a failed screenshot logs instead of crashing. CI puts Mesa's llvmpipe
   `opengl32.dll` next to the exe copy (`smoke-test.ps1 -SoftwareGL`; version pinned in
   `versions.cmake`, unpacked with Windows' own `tar`).
+- `-h`/`--help` prints the usage, the folders and the JSON key format (on Windows it
+  attaches to the calling console). An unknown option prints the usage and exits with 2;
+  it used to be taken as the thread count.
 - Not tested: a real CUDA failure in the middle of a session.
 - A missing driver, no NVIDIA GPU or a CUDA error falls back to CPU threads with a log
   message instead of crashing.
