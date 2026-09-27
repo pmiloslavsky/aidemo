@@ -129,6 +129,52 @@ FractalsData/
 - No import of old binary keys. The only existing key (`x.fractal_key_version_1`, saved
   with an older struct layout) is not carried over to aidemo.
 
+## GPU (CUDA)
+
+Today only Buddhabrot/Nebulabrot uses the GPU. Every other fractal runs on CPU threads.
+
+**Build (M1):**
+- CMake's native CUDA support replaces the VS CUDA build customization.
+- The runtime is linked statically (`CUDA_RUNTIME_LIBRARY Static`), matching the `/MT` C++
+  runtime.
+- GPU code: `CMAKE_CUDA_ARCHITECTURES = 61;75;86;89;120-real;120-virtual`.
+  - That covers GTX 10xx, RTX 20xx, RTX 30xx, RTX 40xx and RTX 50xx.
+  - PTX for `compute_120` lets future GPUs compile the kernels on first launch (JIT).
+  - The old vcxproj set no architecture, so it relied on the default `sm_52` plus JIT.
+
+**Runtime detection and fallback (M5):**
+- Check the result of `cudaGetDeviceCount` (it's currently ignored).
+- Log the GPU name, the driver version (`cudaDriverGetVersion`) and the runtime version.
+- A missing driver, a driver older than CUDA 12.9 needs, or no NVIDIA GPU → log it and use
+  CPU threads.
+- `checkCUDAError` currently calls `exit()` on any error, which kills the whole app. It
+  becomes: return the error → turn CUDA off for the session → continue on CPU.
+- Windows TDR: the display driver resets any GPU call that runs longer than ~2 s, which
+  shows up as an error. Keep each kernel launch well under that (split the samples into
+  chunks if needed).
+
+**Known risks to check in M1/M5:**
+- `cuDoubleComplex trail[10000]` is 160 KB of local memory per GPU thread. The driver
+  reserves that for every thread that can run at once (gigabytes), so the launch may fail
+  with out-of-memory on smaller cards. The fix is to shrink the trail or not store it.
+  Also check that max iterations can't exceed 10000 (buffer overrun).
+- Every call allocates, copies and frees three full-screen hit buffers (about 90 MB at
+  1440p) in both directions. Keeping them on the GPU between calls is a cheap speedup.
+- Consumer GPUs run double precision at 1/64 of single-precision speed. That largely
+  explains why 16 CPU cores beat the GPU. Keeping this as-is is fine for the port.
+
+**Testing:**
+- Locally on the RTX 5070: the CUDA and CPU Buddhabrot images should match
+  *statistically* (it's random sampling, so not pixel-exact).
+- `CUDA_VISIBLE_DEVICES=-1` forces the CPU path.
+- CI has no GPU. It compiles the kernels, and its smoke render exercises the real
+  "no driver" fallback.
+
+**Later (M9+ candidates):**
+- Run the escape-time fractals on the GPU (Mandelbrot, Julia, Newton, Nova, Septagon).
+  Each pixel is independent, so these gain the most from a GPU.
+- Use float or double-float math where deep-zoom precision allows.
+
 ## Port scope (what carries over)
 
 - Port `fractals_with_gui_cuda.cpp` + `buddha_cuda_kernel.cu`, keeping the single-file
