@@ -1,24 +1,116 @@
 # fractals
 
 A fractal explorer written in C++ with SFML, TGUI and CUDA. It renders Mandelbrot, Julia,
-Newton, Nova, Septagon, Buddhabrot and anti-Buddhabrot with threads on every CPU core and
-uses CUDA when an NVIDIA GPU is present.
+Newton, Nova, Septagon, Buddhabrot and anti-Buddhabrot with threads on every CPU core, and
+uses an NVIDIA GPU through CUDA when there is one.
 
 Ported from [pmiloslavsky/demo/fractals](https://github.com/pmiloslavsky/demo/tree/master/fractals)
-(source commit `4e55d14`). The goal is a single self-contained executable for Windows and
-Linux. The plan and milestones are in [GOALS.md](GOALS.md).
+(source commit `4e55d14`) into a single self-contained executable for Windows and Linux. The
+plan and milestones are in [GOALS.md](GOALS.md).
+
+## Download and run
+
+Get the latest release from the
+[Releases page](https://github.com/pmiloslavsky/aidemo/releases?q=fractals): one file,
+nothing to install.
+
+**Windows 10/11 (x64):** download `fractals.exe` and double-click it.
+
+- The exe isn't code-signed yet, so the first time Windows SmartScreen says *"Windows
+  protected your PC"*. Click **More info**, then **Run anyway**.
+- The Visual C++ runtime and the CUDA runtime are built in; no redistributables are needed.
+
+**Linux (x86-64):** download `fractals`, then:
+
+```bash
+chmod +x fractals
+./fractals
+```
+
+- Built on Ubuntu 22.04; it runs on 22.04 and newer (24.04 and 26.04 checked) and other
+  distributions with glibc 2.34 or newer.
+- It needs an X11 or XWayland desktop with OpenGL, which every desktop install has. It
+  also works in WSL on Windows 11 (WSLg).
+
+**GPU:** with an NVIDIA GPU (GTX 10xx or newer) and its driver installed, Mandelbrot, Julia
+and Buddhabrot render on the GPU. Without one, everything runs on CPU threads. The log
+says which (`FractalsData/fractals.log`).
+
+**Files:** the app keeps its files in a `FractalsData` folder next to the executable:
+saved keys, screenshots, themes, images for image coloring, and the log. If that folder
+isn't writable, it uses `%LOCALAPPDATA%\Fractals` or `~/.local/share/fractals` instead.
+
+## Controls
+
+| Input | Action |
+|---|---|
+| **Fractal** menu (bottom left) | choose the fractal |
+| Mouse wheel | zoom (down: in, up: out), one step per notch |
+| Right click | recenter on that point |
+| Left drag | zoom to the selected rectangle |
+| `z` | undo the last zoom or pan |
+| `c` | GPU (CUDA) on/off for this fractal; the status line shows the state |
+| `s` | screenshot to `FractalsData/screenshots/` |
+| `n` | next image for the USE_IMAGE coloring |
+| `g` / `h` | hide or show the GUI / the fractal |
+| `p` | pause or resume rendering |
+| `f` | exclusive fullscreen |
+| `e` | exit |
+
+The panel below the menu sets iterations, power, the Julia constant and the escape radius,
+and chooses palettes and coloring for the outside and the inside of the set. **Save Key**
+stores the current view as a JSON key; **Load Next Key** steps through the saved keys.
+
+## Command line
+
+`fractals --help` lists everything, including the JSON key format. The main options:
+
+| Option | |
+|---|---|
+| `--windowed` | a window instead of borderless full screen |
+| `--console` | show the log in a console (Windows) |
+| `--cuda` / `--no-cuda` | start with the GPU on for every fractal that supports it / never use the GPU |
+| `save_and_exit <key.json> <out.png> [hide]` | render a key to a PNG at 2560x1440 and exit |
+| `[threads]` | number of render threads |
+
+`tools/make_fractal_movies.py` uses `save_and_exit` to turn a key into an animated GIF
+and MP4s (zooming in while the light moves).
+
+## Building from source
+
+The build pulls SFML, TGUI, nlohmann/json and CMakeRC at the versions pinned in
+`cmake/versions.cmake`. CUDA is optional: without `nvcc` the build is CPU-only.
+
+**Windows:** Visual Studio 2022 with the C++ workload (its bundled CMake and Ninja work),
+and optionally the CUDA Toolkit 12.x.
+
+```powershell
+.\scripts\setup-windows.ps1
+.\scripts\build-windows.ps1
+```
+
+**Linux:** `scripts/setup-linux.sh` installs the compiler, CMake, Ninja and the X11/GL
+headers with apt (it asks for sudo). CUDA is used if it's already installed.
+
+```bash
+scripts/setup-linux.sh
+scripts/build-linux.sh
+```
+
+The executable is in `build/<preset>/bin/`. Presets: `windows-release`, `linux-release`,
+their `-debug` versions and `-cpu-only` versions. `scripts/smoke-test.{sh,ps1}` renders
+the keys in `tests/smoke/` as a quick check. GitHub Actions builds both on every push, and a
+`fractals-v*` tag publishes a release.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/` | Application and CUDA kernel sources |
-| `assets/themes/` | TGUI themes (embedded in the exe) |
-| `assets/escape_images/` | Images for "use image" coloring (embedded in the exe) |
-| `tools/` | `make_fractal_movies.py`, which renders a movie from a JSON key with the app (see its docstring) |
-
-Build: `scripts/build-windows.ps1` or `scripts/build-linux.sh` (see GOALS.md). Run
-`fractals --help` for the command-line options, folders and the JSON key format.
+| `assets/themes/`, `assets/escape_images/` | Default themes and coloring images, embedded in the executable |
+| `scripts/` | Setup, build and smoke-test scripts (used by CI too) |
+| `tests/` | Smoke-test and benchmark keys |
+| `tools/` | Movie script, third-party notices generator |
 
 ## Performance
 
@@ -72,4 +164,8 @@ and driver are present. `c` toggles it per fractal, and `--no-cuda` turns it off
 Buddhabrot kernel only does z² + c, so the Julia, anti and other-power variants always
 run on the CPU ("Cuda N/A").
 
-`src/tinycolormap.hpp` is © Yuki Koyama, MIT License.
+## License notices
+
+The executable includes SFML, TGUI, FreeType, HarfBuzz, SheenBidi, stb_image, nlohmann/json,
+CMakeRC, tinycolormap and the NVIDIA CUDA runtime. Their licenses are in
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), which ships with each release.

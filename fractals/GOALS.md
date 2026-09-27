@@ -430,7 +430,17 @@ before moving on.
   - Log frame times for CPU vs GPU at 1440p for a few keys, and record them in the README.
   - The CI smoke render (no GPU) still takes the CPU path.
 
-### M7: Releases + docs
+### M7: Releases + docs — in progress
+- `.github/workflows/fractals-release.yml`: a `fractals-v*` tag runs `fractals.yml` (now
+  also `workflow_call`), then creates the Release with `fractals.exe`, `fractals`,
+  `THIRD_PARTY_NOTICES.txt` and `SHA256SUMS.txt`; the body is `RELEASE_NOTES.md`. A `-` after
+  the version (`fractals-v0.9-test`) makes a pre-release.
+- `THIRD_PARTY_NOTICES.txt` is generated from the downloaded sources' license files by
+  `tools/make_third_party_notices.py` (rerun after changing `versions.cmake`). It covers
+  SFML, TGUI, FreeType, HarfBuzz, SheenBidi, stb_image, qoi, cpp-unicodelib, glad,
+  nlohmann/json, CMakeRC, tinycolormap and the CUDA runtime.
+- The origin and license of the escape images (copied from the old repo) is unknown;
+  hubble.jpg and jupiter.jpg look like NASA images (public domain), the rest are unclear.
 - A `fractals-v*` tag creates a GitHub Release with `fractals.exe` + the Linux
   `fractals`.
 - README: download/run steps, SmartScreen note, controls, build instructions.

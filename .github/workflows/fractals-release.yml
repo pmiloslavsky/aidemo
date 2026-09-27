@@ -1,0 +1,47 @@
+name: fractals release
+
+# Pushing a tag like fractals-v1.0 builds and smoke-tests both binaries with
+# fractals.yml, then attaches them to a GitHub Release for that tag. Tags with
+# a "-" after the version (fractals-v0.9-test) make a pre-release.
+on:
+  push:
+    tags: ['fractals-v*']
+
+concurrency:
+  group: fractals-release-${{ github.ref }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/fractals.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: fractals
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir release
+          cp dist/fractals-windows/fractals.exe release/fractals.exe
+          cp dist/fractals-linux/fractals release/fractals
+          cp fractals/THIRD_PARTY_NOTICES.txt release/
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          ls -l release
+          prerelease=""
+          case "${TAG#fractals-v}" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" release/* $prerelease \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "fractals ${TAG#fractals-}" \
+            --notes-file fractals/RELEASE_NOTES.md

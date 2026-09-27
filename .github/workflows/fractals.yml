@@ -13,6 +13,8 @@ on:
       - 'fractals/**'
       - '.github/workflows/fractals.yml'
   workflow_dispatch:
+  # fractals-release.yml runs the same build for a release tag
+  workflow_call:
 
 concurrency:
   group: fractals-${{ github.ref }}
