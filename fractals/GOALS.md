@@ -170,15 +170,19 @@ Today only Buddhabrot/Nebulabrot uses the GPU. Every other fractal runs on CPU t
 - CI has no GPU. It compiles the kernels, and its smoke render exercises the real
   "no driver" fallback.
 
-**Later (M9+ candidates):**
-- Run the escape-time fractals on the GPU (Mandelbrot, Julia, Newton, Nova, Septagon).
-  Each pixel is independent, so these gain the most from a GPU.
+**Mandelbrot on the GPU (M6):**
+- Today the `C` key sets `cuda_mode` and the label says "Cuda Running" for every fractal,
+  but only Buddhabrot reads the flag. Mandelbrot always renders with `getImagePixels` on
+  the CPU. M6 adds a real kernel for it (see the M6 milestone).
+
+**Later (M10+ candidates):**
+- Newton, Nova and Septagon on the GPU (Julia is covered in M6).
 - Use float or double-float math where deep-zoom precision allows.
 
 ## Port scope (what carries over)
 
 - Port `fractals_with_gui_cuda.cpp` + `buddha_cuda_kernel.cu`, keeping the single-file
-  structure until M8.
+  structure until M9.
 - **Copied from the old repo:** all `escape_image/*.jpg`, the themes, `tinycolormap.hpp`,
   and `make_fractal_movies.py` (updated in M4).
 - **Not copied:** `fractals_with_gui.cpp` (CPU-only legacy), `screenshots/` (109 MB),
@@ -242,7 +246,29 @@ before moving on.
 - **Verify:** CI smoke tests pass on both OSes; locally, `CUDA_VISIBLE_DEVICES=-1`
   forces the CPU path.
 
-### M6: Releases + docs
+### M6: CUDA Mandelbrot (+ Julia)
+- A new escape-time kernel with one GPU thread per pixel. It runs the same iteration as the
+  CPU `getImagePixels` path: the configurable power, the escape radius, and the max
+  iterations.
+  - It writes the per-pixel results the CPU coloring already uses (iteration count, smooth
+    value, and whatever the shadow-map and interior coloring need) into a device buffer
+    that stays on the GPU between frames.
+  - The existing CPU coloring turns them into pixels, so the look doesn't change.
+- Julia uses the same loop with `z0 = pixel` and `c = zconst`, so it comes almost free.
+- When `cuda_mode` is on and a GPU is present, the render thread calls the kernel instead
+  of `getImagePixels`. Any CUDA error falls back to CPU (M5).
+- The "Cuda Running" label is shown only when the kernel actually rendered the frame.
+  Fractals without a kernel show "Cuda N/A".
+- Kernel launches are split into tiles so each stays well under the Windows ~2 s GPU
+  timeout at high max-iterations.
+- **Verify:**
+  - GPU and CPU renders of the same JSON keys match pixel for pixel, or within 1
+    iteration at boundary pixels where rounding differs. Check at several zoom depths down
+    to ~1e-13, the double-precision limit.
+  - Log frame times for CPU vs GPU at 1440p for a few keys, and record them in the README.
+  - The CI smoke render (no GPU) still takes the CPU path.
+
+### M7: Releases + docs
 - A `fractals-v*` tag creates a GitHub Release with `fractals.exe` + the Linux
   `fractals`.
 - README: download/run steps, SmartScreen note, controls, build instructions.
@@ -250,17 +276,17 @@ before moving on.
   CUDA runtime redistribution notice).
 - **Verify:** a test tag produces a Release whose files download and run.
 
-### M7: Clean-machine check → v1.0
+### M8: Clean-machine check → v1.0
 - Run the Release exe on a Windows machine or VM with no VS, CUDA or redistributables
   (Windows Sandbox works for this), and the Linux binary on a stock Ubuntu 22.04 / 24.04 /
   26.04 (WSL is fine).
 - Add an AppImage only if something is missing.
 - **Verify:** it works everywhere → tag `fractals-v1.0`.
 
-### M8: Code split (optional, before features)
+### M9: Code split (optional, before features)
 - Split the 3,300-line file into modules: fractal math, CPU renderer, CUDA bridge, coloring,
   keys, GUI, app/paths. No behavior change.
 - **Verify:** CI smoke renders are identical before and after.
 
-### M9+: App changes
+### M10+: App changes
 _TBD. To be discussed._
