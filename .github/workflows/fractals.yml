@@ -41,13 +41,13 @@ jobs:
         working-directory: fractals
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # FetchContent sources and their object files. Keyed per commit so every
       # run saves a fresh copy; restore-keys picks the newest one with the same
       # pinned versions, so only changed files rebuild.
       - name: Cache dependency builds
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: fractals/build/${{ matrix.preset }}
           key: build-${{ matrix.preset }}-${{ hashFiles('fractals/cmake/versions.cmake', 'fractals/CMakeLists.txt', 'fractals/CMakePresets.json') }}-${{ github.sha }}
@@ -83,7 +83,7 @@ jobs:
         run: bash scripts/smoke-test.sh build/${{ matrix.preset }}/bin/${{ matrix.binary }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fractals-${{ matrix.name }}
           # Assets are embedded; the binary is the whole app
