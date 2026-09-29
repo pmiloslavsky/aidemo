@@ -189,7 +189,7 @@ class ReferenceFrame {
   double light_height;
 
   // Random Sample faster but less exact rendering
-  bool random_sample = false;
+  bool random_sample = true;  // Buddhabrots: random samples (the grid builds up row by row)
 
   // Mandelbrot/Julia: raise max iterations with the zoom (see effective_iters)
   bool auto_iterations = true;
@@ -1495,7 +1495,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
       }
 
       complex<double> sample;
-      if (R.random_sample) {
+      if (R.random_sample || FRAC[current_fractal].anti) {  // anti needs random samples
         // Randomly sampled pixels
         sample = {xDistribution(re), yDistribution(re)};
       } else {
@@ -2114,6 +2114,7 @@ void signalFractalMenu(shared_ptr<FractalModel> p_model,
   updateGuiElements(pgui, p_model);
   p_model->reset_fractal_and_reference_frame();
   p_model->reset_fractal_params();
+  if (FRAC[p_model->current_fractal].anti) R.random_sample = true;  // required there
   clearNumberBoxes(pgui);
   setGuiElementsFromModel(pgui, p_model);
 }
@@ -2297,7 +2298,7 @@ void applyFractal(shared_ptr<FractalModel> p_model, const SavedFractal &s) {
   R.light_pos_i = r.light_pos_i;
   R.light_angle = r.light_angle;
   R.light_height = r.light_height;
-  R.random_sample = r.random_sample;
+  R.random_sample = r.random_sample || f.anti;  // the anti-Buddhabrots need it
   R.auto_iterations = r.auto_iterations;
   if (R.color_algo == ColoringAlgo::USE_IMAGE && !R.image_loaded)
     R.color_algo = ColoringAlgo::MULTICYCLE;
@@ -2430,7 +2431,7 @@ bool keyFromJson(const json &j, SavedFractal &s) {
 
   // Defaults are what the app starts with
   ReferenceFrame &r = s.RF;
-  r.random_sample = keyField(j, "random_sample", false);
+  r.random_sample = keyField(j, "random_sample", true);
   r.auto_iterations = keyField(j, "auto_iterations", false);  // old keys: fixed
   r.xstart = keyField(j, "view", "x_start", f.xMinMax[0]);
   r.ystart = keyField(j, "view", "y_start", f.yMinMax[0]);
@@ -2748,7 +2749,8 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   cbox->setText("Random\nsampling");
   cbox->setSize(30, 30);
   pgui->add(cbox, "RandomSample");
-  setTip(cbox, "Buddhabrot: pick sample points at random instead of on a grid");
+  setTip(cbox, "Buddhabrot: pick sample points at random instead of on a grid.\n"
+               "Always on for the anti-Buddhabrots, which need it.");
   cbox->onChange(signalSamplingButton, p_model);
   cbox->setChecked(R.random_sample);
 
@@ -3062,10 +3064,20 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   current = pgui->get<tgui::Label>("power_label");
   current->setText("Power");
 
+  if (auto random_box = pgui->get<tgui::CheckBox>("RandomSample")) {
+    bool anti = FRAC[p_model->current_fractal].anti;
+    if (random_box->isEnabled() == anti) random_box->setEnabled(!anti);
+  }
+
   if (auto autobox = pgui->get<tgui::CheckBox>("AutoIterations")) {
     const SupportedFractal &fr = FRAC[p_model->current_fractal];
-    std::string text = has_escape_kernel(fr) ? "Auto (" + to_string(effective_iters(fr)) + ")" : "Auto (n/a)";
-    if (autobox->getText() != text) autobox->setText(text);
+    // Only Mandelbrot and Julia have auto iterations; elsewhere the checkbox is
+    // hidden (the Buddhabrot label uses its row for "red, green, blue")
+    auto power_box = pgui->get<tgui::EditBox>("power_box");  // hidden with the GUI (g key)
+    bool applies = has_escape_kernel(fr) && power_box && power_box->isVisible();
+    if (autobox->isVisible() != applies) autobox->setVisible(applies);
+    std::string text = "Auto (" + to_string(effective_iters(fr)) + ")";
+    if (applies && autobox->getText() != text) autobox->setText(text);
   }
 
   current = pgui->get<tgui::Label>("miters_label");

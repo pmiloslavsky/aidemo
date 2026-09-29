@@ -526,3 +526,8 @@ _TBD. To be discussed._
     Interior UF16 bands read the inside Mirror checkbox. Stats show real percentages.
   - Auto iterations (Mandelbrot/Julia, default on): limit = base x (1 + log10(1/zoom)).
     Keys store `auto_iterations`; keys without it load with it off (render as before).
+- Random sampling is the default for all Buddhabrots (grid sampling builds the picture up
+  row by row over minutes; keys without the field use random). The anti-Buddhabrots always
+  sample at random: they plot orbits that stay inside, and the grid starts at the top edge
+  where there are none, so the image stayed black. The Auto iterations checkbox is hidden
+  where it doesn't apply (it overlapped the Buddhabrot "red, green, blue" label).
