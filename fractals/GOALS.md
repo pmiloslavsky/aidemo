@@ -240,7 +240,7 @@ before moving on.
   loads on Ubuntu 26.04 (WSL). SFML loads libGL at runtime.
 - Follow-up (done 2026-09-29): actions bumped to Node 24 versions (checkout v7, cache v6,
   upload-artifact v7, download-artifact v8). GitHub warned that the v4 actions ran on the
-  deprecated Node 20; bump them when Node 24 versions are out.
+  deprecated Node 20.
 - Local status: `linux-release-cpu-only` builds in WSL Ubuntu 26.04 (GCC 15) with no
   source changes (the M1 port already fixed the GCC issues). `readelf -d` shows only
   X11, Xrandr, Xcursor, Xi, udev, libm, libc and the loader. `scripts/check-linux-deps.sh`
