@@ -545,6 +545,17 @@ class SavedFractal {
 //   unsigned long long samples_last_second;
 // };
 
+// Palette lookups. tinycolormap turns NaN into an out-of-range table index
+// (undefined behavior; on x64 it happens to give black). NaN comes from
+// log(log2|z|) when an orbit escapes with |z| < 1 (Newton, Nova, a small escape
+// radius) or from dividing by 0 max iterations, so NaN maps to the palette start.
+inline tinycolormap::Color palette_color(double x, tinycolormap::ColormapType type) {
+  return tinycolormap::GetColor(std::isnan(x) ? 0.0 : x, type);
+}
+inline tinycolormap::Color palette_color_r(double x, tinycolormap::ColormapType type) {
+  return tinycolormap::GetColorR(std::isnan(x) ? 0.0 : x, type);
+}
+
 // Ultra Fractal's default palette (UF16). A constant table: building it per
 // pixel (17 heap allocations) made the render threads fight over the heap.
 static const int UF16_MAPPING[16][3] = {
@@ -601,10 +612,10 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
     int i = (int)(t * 256) % R.color_cycle_size;
     tinycolormap::Color color(0.0, 0.0, 0.0);
     if (R.reflect_palette)
-      color = tinycolormap::GetColorR(
+      color = palette_color_r(
           i / static_cast<double>(R.color_cycle_size), R.palette);
     else
-      color = tinycolormap::GetColor(
+      color = palette_color(
           i / static_cast<double>(R.color_cycle_size), R.palette);
 
     *p_rcolor = (int)(255 * color.r());
@@ -636,10 +647,10 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
     int i = iter_ix % R.color_cycle_size;
     tinycolormap::Color color(0.0, 0.0, 0.0);
     if (R.reflect_palette)
-      color = tinycolormap::GetColorR(
+      color = palette_color_r(
           i / static_cast<double>(R.color_cycle_size), R.palette);
     else
-      color = tinycolormap::GetColor(
+      color = palette_color(
           i / static_cast<double>(R.color_cycle_size), R.palette);
 
     *p_rcolor = (int)(255 * color.r());
@@ -649,9 +660,9 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
     double smooth = ((iter_ix + 1 - log(log2(abs(zfinal)))));  // 0 -> iters_max
     tinycolormap::Color color(0.0, 0.0, 0.0);
     if (R.reflect_palette)
-      color = tinycolormap::GetColorR(smooth / iters_max, R.palette);
+      color = palette_color_r(smooth / iters_max, R.palette);
     else
-      color = tinycolormap::GetColor(smooth / iters_max, R.palette);
+      color = palette_color(smooth / iters_max, R.palette);
 
     *p_rcolor = (int)(255 * color.r());
     *p_gcolor = (int)(255 * color.g());
@@ -724,10 +735,10 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
               RI.color_cycle_size;
       tinycolormap::Color color(0.0, 0.0, 0.0);
       if (RI.reflect_palette)
-        color = tinycolormap::GetColorR(
+        color = palette_color_r(
             i / static_cast<double>(RI.color_cycle_size), RI.palette);
       else
-        color = tinycolormap::GetColor(
+        color = palette_color(
             i / static_cast<double>(RI.color_cycle_size), RI.palette);
 
       *p_rcolor = (unsigned int)(255 * color.r());
@@ -1326,8 +1337,8 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
                                         tix, p_reset, p_update_and_draw);
         if (reset_detected == true) {
           reset_detected = false;
-          // Clear any data generated so far
-          for (auto &v : color) v.clear();
+          // Nothing to clear: the next pass overwrites every pixel. (This
+          // used to clear() the shared color array under the other threads.)
         } else {
           thread_frame_ms[tix] = chrono::duration<double, milli>(
               chrono::steady_clock::now() - slice_start).count();
@@ -1379,10 +1390,10 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
       if (reset_detected == true) {
         reset_detected = false;
-        // Clear any data generated so far
-        for (auto &v : redHits) v.clear();
-        for (auto &v : greenHits) v.clear();
-        for (auto &v : blueHits) v.clear();
+        // Drop the hits of the old view. Zero them: clear() kept the old
+        // counts in memory and the next samples were added on top of them.
+        for (auto *hits : {&redHits, &greenHits, &blueHits})
+          for (auto &v : *hits) std::fill(v.begin(), v.end(), 0ULL);
         continue;  // dont merge fractal per thread trails
       }
 

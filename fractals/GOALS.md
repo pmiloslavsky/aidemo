@@ -496,3 +496,15 @@ _TBD. To be discussed._
   immutable object behind a `shared_ptr`, swapped under a mutex; each render thread takes
   a snapshot per slice; pixel indexes are clamped. Survives 3 x 150 fast presses.
 - `windows-relwithdebinfo` preset (optimized, with a PDB) for debugging crashes.
+- **Audit for similar bugs (2026-09-29).** The GUI writes plain scalars (palette,
+  iterations, light) that the render threads read without locks; at worst one frame mixes
+  settings. Fixed:
+  - Escape-time reset: one render thread `clear()`ed the whole shared `color` array
+    while the others wrote to it (indexing past `size()`; it worked only because
+    `clear()` keeps capacity). Removed; the next pass overwrites every pixel.
+  - Buddhabrot reset: each thread `clear()`ed its hit arrays, which kept the old counts
+    in memory, so new samples were added to the old view's hits. Now zero-filled.
+  - NaN palette index: tinycolormap's `Clamp01` passes NaN, and `CalcLerp` turns it into a
+    table index (undefined behavior; x64 gives index 0, so black). SMOOTH coloring makes NaN
+    whenever an orbit escapes with |z| < 1: Newton/Nova with SMOOTH were 56% black, a small
+    escape radius 28%. `palette_color()` maps NaN to 0; Newton SMOOTH is now fully colored.
