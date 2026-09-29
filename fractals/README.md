@@ -57,9 +57,16 @@ isn't writable, it uses `%LOCALAPPDATA%\Fractals` or `~/.local/share/fractals` i
 | `f` | exclusive fullscreen |
 | `e` | exit |
 
-The panel below the menu sets iterations, power, the Julia constant and the escape radius,
-and chooses palettes and coloring for the outside and the inside of the set. **Save Key**
-stores the current view as a JSON key; **Load Next Key** steps through the saved keys.
+The panel below the menu sets max iterations, power, the Julia constant and the escape
+radius, and chooses palettes and coloring for the outside and the inside of the set. Hover
+over any control for an explanation.
+
+- **Number boxes** show the values in effect. Type a number and press Enter (or click
+  elsewhere) to apply it; anything that isn't a valid number is ignored.
+- **Auto** (next to Max iterations, on by default) raises the iteration limit as you zoom
+  in, so the inside of the set stays accurate at depth; the box value is the base.
+- **Save key file** stores the current view as a JSON key; **Next key file** steps through
+  the saved keys. **Remember view** / **Next remembered** keep views in memory only.
 
 ## Command line
 

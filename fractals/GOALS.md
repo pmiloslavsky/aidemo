@@ -509,3 +509,20 @@ _TBD. To be discussed._
     table index (undefined behavior; x64 gives index 0, so black). SMOOTH coloring makes NaN
     whenever an orbit escapes with |z| < 1: Newton/Nova with SMOOTH were 56% black, a small
     escape radius 28%. `palette_color()` maps NaN to 0; Newton SMOOTH is now fully colored.
+- **UI pass (2026-09-29, reviewed by the user).**
+  - Number boxes show the values in effect (grey default text, refreshed every frame),
+    apply on Enter/unfocus, and ignore invalid input. Before: every keystroke applied (deleting
+    "500" left 5 iterations; typing a big number briefly asked for 999999999), empty or
+    partial text applied fallbacks (escape radius 0), and out-of-range text threw an uncaught
+    `std::out_of_range` (crash).
+  - Hotkeys are off while a number box has focus (typing "1e-3" pressed `e` = exit). The GUI
+    gets events first; clicks and wheel on widgets no longer crop/pan/zoom the fractal (an
+    unpaired button release used to crop from a stale start point).
+  - Clearer names and hover tooltips everywhere; one label per status row (no overlaps);
+    labels get a see-through dark backing. Band size 16..1024 (was 8..256). Inside styles
+    TRIG2 (drew nothing) and TEMP (unfinished) removed; old keys fall back to SOLID.
+  - Checkboxes set (not toggle) the model and start in the right state (Random sampling
+    showed the opposite); all lists and checkboxes sync on key load, undo and fractal switch.
+    Interior UF16 bands read the inside Mirror checkbox. Stats show real percentages.
+  - Auto iterations (Mandelbrot/Julia, default on): limit = base x (1 + log10(1/zoom)).
+    Keys store `auto_iterations`; keys without it load with it off (render as before).

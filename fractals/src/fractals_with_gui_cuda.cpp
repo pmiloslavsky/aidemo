@@ -8,6 +8,10 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <climits>
+#include <iomanip>
+#include <optional>
+#include <sstream>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -126,10 +130,8 @@ enum class InteriorColoringAlgo {
   MULTICYCLE,
   USE_IMAGE,
   TRIG,
-  TRIG2,
   DIST,
-  DIST2,
-  TEMP
+  DIST2
 };
 
 // Names used in key files; the first entry is the default for unknown names
@@ -142,11 +144,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(InteriorColoringAlgo,
                               {InteriorColoringAlgo::MULTICYCLE, "MULTICYCLE"},
                               {InteriorColoringAlgo::USE_IMAGE, "USE_IMAGE"},
                               {InteriorColoringAlgo::TRIG, "TRIG"},
-                              {InteriorColoringAlgo::TRIG2, "TRIG2"},
                               {InteriorColoringAlgo::DIST, "DIST"},
-                              {InteriorColoringAlgo::DIST2, "DIST2"},
-                              {InteriorColoringAlgo::TEMP, "TEMP"}})
-#define LAST_INTERIOR_COLOR_ALGO ((unsigned int)InteriorColoringAlgo::DISTANCE)
+                              {InteriorColoringAlgo::DIST2, "DIST2"}})
 unsigned int interior_color_adjust = 0;
 
 // std::is_trivially_copyable
@@ -192,6 +191,9 @@ class ReferenceFrame {
   // Random Sample faster but less exact rendering
   bool random_sample = false;
 
+  // Mandelbrot/Julia: raise max iterations with the zoom (see effective_iters)
+  bool auto_iterations = true;
+
   // Original total Pixels
   double original_width;
   double original_height;
@@ -204,9 +206,10 @@ class ReferenceFrame {
 // Non Serializable part of Fractal description thats too big to store in a key
 class NSReferenceFrame {
  public:
-  vector<string> color_cycle_size_names{string("8"),   string("16"),
-                                        string("32"),  string("64"),
-                                        string("128"), string("256")};
+  // Band sizes 16 << index (the lists and cycleIndex use the same rule)
+  vector<string> color_cycle_size_names{string("16"),  string("32"),  string("64"),
+                                        string("128"), string("256"), string("512"),
+                                        string("1024")};
   vector<string> color_names{string("Parula"),
                              string("Heat"),
                              string("Jet"),  // same order as tinycolormap::ColormapType
@@ -719,7 +722,7 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
         // Ultra Fractal Default non smooth
 
         int i = (interior_color_adjust *10 * (int)(distancer + distancei)) % 16;
-        if (R.reflect_palette) {
+        if (RI.reflect_palette) {
           i = (interior_color_adjust * 10 * (int)(distancer + distancei)) % 32;
           if (i >= 16) i = 31 - i;
         }
@@ -774,9 +777,6 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
                    (distancer + distancei)) / (iters_max));
       return;
     } break;
-    case InteriorColoringAlgo::TRIG2: {
-      return;
-    } break;
     case InteriorColoringAlgo::DIST: {
       *p_rcolor = (int)(interior_color_adjust * 255 * (distancer) / (iters_max));
       *p_gcolor = (int)(interior_color_adjust * 255 * (distancei) / (iters_max));
@@ -797,22 +797,6 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
           (int)(255.0 * (atan(distancer + distancei)) *
                 ((1.0 / interior_color_adjust) * (distancer + distancei)) /
                 (iters_max));
-      return;
-    } break;
-    case InteriorColoringAlgo::TEMP: {
-      *p_rcolor =
-          (int)(255.0 * (cos(distancer) + sin(distancei)) *
-                ((1.0 / interior_color_adjust) * (distancer + distancei)) /
-                (iters_max));
-      *p_gcolor =
-          (int)(255.0 * (sin(distancer) + cos(distancei)) *
-                ((1.0 / interior_color_adjust) * (distancer + distancei)) /
-                (iters_max));
-      *p_bcolor =
-          (int)(255.0 * ((distancer + distancei)) *
-                ((1.0 / interior_color_adjust) * (distancer + distancei)) /
-                (iters_max));
-      return;
       return;
     } break;
   }
@@ -863,6 +847,19 @@ void color_escape_pixel(const complex<double> &point, unsigned int iter_ix,
 bool has_escape_kernel(const SupportedFractal &f) {
   return !f.probabalistic && f.name != "Spiral_Septagon" &&
          f.name != "Nova_z6+z3-1" && f.name != "Newton_z6+z3-1";
+}
+
+// Max iterations actually used. With auto iterations (Mandelbrot and Julia
+// only) the box value is a base that grows as you zoom in: points near the
+// boundary need more steps to show that they escape, and with too few they
+// are counted as inside. x1 at zoom 1, x5 at 1e-4, x14 at 1e-13.
+unsigned int effective_iters(const SupportedFractal &f) {
+  unsigned int base = f.current_max_iters[0];
+  if (!R.auto_iterations || !has_escape_kernel(f) || R.displayed_zoom >= 1.0 ||
+      !(R.displayed_zoom > 0))
+    return base;
+  double factor = 1.0 + std::log10(1.0 / R.displayed_zoom);
+  return (unsigned int)std::min(base * factor, 100000000.0);
 }
 
 // Whether the current settings of f can run on the GPU. The Buddhabrot kernel
@@ -1717,13 +1714,14 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
     } clear_snapshot;
 
     const SupportedFractal &f = FRAC[current_fractal];
+    const unsigned int iters = effective_iters(f);  // Mandelbrot/Julia
     if (f.cuda_mode && cuda_detected && has_escape_kernel(f)) {
       // The GPU computes the orbits of this thread's columns; the coloring
       // below is the CPU's own, so the look is the same
       EscapeParams p{xstart, ystart, xdelta, ydelta,
                      f.current_power, f.current_zconst.real(), f.current_zconst.imag(),
                      f.current_escape_r, R.light_pos_r, R.light_pos_i,
-                     f.current_max_iters[0], f.julia ? 1 : 0,
+                     iters, f.julia ? 1 : 0,
                      R.color_algo == ColoringAlgo::SHADOW_MAP ? 1 : 0};
       unsigned int h = (unsigned int)R.original_height;
       thread_local std::vector<EscapeResult> results;
@@ -1741,7 +1739,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
             const EscapeResult &e = results[(size_t)(i - xs) * h + j];
             int rcolor = 0, gcolor = 0, bcolor = 0;
             color_escape_pixel(complex<double>(xstart + i * xdelta, ystart + j * ydelta),
-                               e.iter, f.current_max_iters[0], complex<double>(e.z_r, e.z_i),
+                               e.iter, iters, complex<double>(e.z_r, e.z_i),
                                complex<double>(e.d_r, e.d_i), e.dist_i, e.dist_r, &rcolor,
                                &gcolor, &bcolor, in_set, escaped);
             color[i][j] = sf::Color(rcolor, gcolor, bcolor);
@@ -1804,7 +1802,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
               stats[current_fractal].escaped_set);
         } else
           mandelbrot_iterations_to_escape(
-              xi, yj, FRAC[current_fractal].current_max_iters[0], &rcolor,
+              xi, yj, iters, &rcolor,
               &gcolor, &bcolor, FRAC[current_fractal].current_power,
               FRAC[current_fractal].current_zconst,
               FRAC[current_fractal].current_escape_r,
@@ -2021,6 +2019,91 @@ void setGuiElementsFromModel(shared_ptr<tgui::Gui> &pgui,
 void updateGuiElements(shared_ptr<tgui::Gui> &pgui,
                        shared_ptr<FractalModel> &p_model);
 
+// ---------------------------------------------------------------------------
+// Number boxes. A value applies when you press Enter or leave the box, and only
+// if the text is a complete number; anything else (empty, "-", out of range)
+// changes nothing. Then the box is cleared, so its grey default text shows the
+// value in effect (refreshed every frame by refreshNumberBoxes). Applying as
+// you typed used every prefix: deleting "500" left 5 iterations, and typing a
+// big number briefly asked for 999999999.
+// ---------------------------------------------------------------------------
+std::optional<double> parseNumber(const tgui::String &text) {
+  std::string t = text.toStdString();
+  if (t.empty()) return std::nullopt;
+  try {
+    size_t used = 0;
+    double v = std::stod(t, &used);
+    if (used != t.size() || !std::isfinite(v)) return std::nullopt;
+    return v;
+  } catch (...) {  // invalid_argument, out_of_range
+    return std::nullopt;
+  }
+}
+
+// base 0 also accepts 0x... (hex), as the interior color box did before
+std::optional<unsigned int> parseCount(const tgui::String &text, int base = 10) {
+  std::string t = text.toStdString();
+  if (t.empty() || t[0] == '-' || t[0] == '+') return std::nullopt;
+  try {
+    size_t used = 0;
+    unsigned long long v = std::stoull(t, &used, base);
+    if (used != t.size() || v > UINT_MAX) return std::nullopt;
+    return (unsigned int)v;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+// 574207584 -> "574.2 M"
+std::string formatCount(double v) {
+  const char *units[] = {"", " k", " M", " G", " T"};
+  int u = 0;
+  while (v >= 1000 && u < 4) v /= 1000, ++u;
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(u ? 1 : 0) << v << units[u];
+  return out.str();
+}
+
+std::string formatPercent(double part, double whole) {
+  if (whole <= 0) return "-";
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(1) << 100.0 * part / whole << "%";
+  return out.str();
+}
+
+std::string formatNumber(double v) {
+  std::ostringstream out;
+  out << std::setprecision(10) << v;
+  return out.str();
+}
+
+const char *number_boxes[] = {"power_box",       "max_iters_box0",  "max_iters_box1",
+                              "max_iters_box2",  "zconst_real_box", "zconst_imag_box",
+                              "escape_r_box",    "interior_color_adjust"};
+
+void refreshNumberBoxes(shared_ptr<tgui::Gui> &pgui, shared_ptr<FractalModel> &p_model) {
+  const SupportedFractal &f = FRAC[p_model->current_fractal];
+  const std::string values[] = {formatNumber(f.current_power),
+                                to_string(f.current_max_iters[0]),
+                                to_string(f.current_max_iters[1]),
+                                to_string(f.current_max_iters[2]),
+                                formatNumber(f.current_zconst.real()),
+                                formatNumber(f.current_zconst.imag()),
+                                formatNumber(f.current_escape_r),
+                                to_string(interior_color_adjust)};
+  for (size_t i = 0; i < std::size(number_boxes); ++i) {
+    auto box = pgui->get<tgui::EditBox>(number_boxes[i]);
+    if (box && box->getDefaultText() != values[i]) box->setDefaultText(values[i]);
+  }
+}
+
+// After a fractal switch, key load or undo: drop typed text so every box shows
+// the new values
+void clearNumberBoxes(shared_ptr<tgui::Gui> &pgui) {
+  for (const char *name : number_boxes)
+    if (auto box = pgui->get<tgui::EditBox>(name)) box->setText("");
+}
+
 void signalFractalMenu(shared_ptr<FractalModel> p_model,
                        shared_ptr<tgui::Gui> pgui, const tgui::String &selected) {
   for (size_t i = 0; i < FRAC.size(); ++i) {
@@ -2031,97 +2114,65 @@ void signalFractalMenu(shared_ptr<FractalModel> p_model,
   updateGuiElements(pgui, p_model);
   p_model->reset_fractal_and_reference_frame();
   p_model->reset_fractal_params();
+  clearNumberBoxes(pgui);
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void signalPower(shared_ptr<FractalModel> p_model,
-                 shared_ptr<tgui::Gui> pgui, const tgui::String &value
-                 ) {
+                 shared_ptr<tgui::Gui> pgui, const tgui::String &value) {
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  auto v = parseNumber(value);
+  if (!v || *v == FRAC[p_model->current_fractal].current_power) return;
   updateGuiElements(pgui, p_model);
-
-  double input = 2.0;
-  try {
-    input = std::stod(value.toStdString());  //.toAnsiString()
-  }
-  catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() <<endl;
-    input = 2.0;
-  }
-  FRAC[p_model->current_fractal].current_power = input;
+  FRAC[p_model->current_fractal].current_power = *v;
   p_model->reset_fractal_and_reference_frame();
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void signalMIters(shared_ptr<FractalModel> p_model,
 		  shared_ptr<tgui::Gui> pgui, int iter_ix, const tgui::String &value) {
-  unsigned int input = 2;
-  try {
-    input = std::stoi(value.toStdString());
-  }
-  catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() <<endl;
-    input = 300;
-  }
-  FRAC[p_model->current_fractal].current_max_iters[iter_ix] = input;
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  if (auto v = parseCount(value))
+    FRAC[p_model->current_fractal].current_max_iters[iter_ix] = *v;
 }
 
 void signalZconstr(shared_ptr<FractalModel> p_model,
                    shared_ptr<tgui::Gui> pgui, const tgui::String &value) {
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  complex<double> &z = FRAC[p_model->current_fractal].current_zconst;
+  auto v = parseNumber(value);
+  if (!v || *v == z.real()) return;
   updateGuiElements(pgui, p_model);
-
-  double input = 0.0;
-  try {
-    input = std::stod(value.toStdString());
-  }
-  catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() <<endl;
-    input = 0.0;
-  }
-  FRAC[p_model->current_fractal].current_zconst = complex<double>(
-      input, FRAC[p_model->current_fractal].current_zconst.imag());
+  z = complex<double>(*v, z.imag());
   p_model->reset_fractal_and_reference_frame();
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void signalZconsti(shared_ptr<FractalModel> p_model,
                    shared_ptr<tgui::Gui> pgui, const tgui::String &value) {
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  complex<double> &z = FRAC[p_model->current_fractal].current_zconst;
+  auto v = parseNumber(value);
+  if (!v || *v == z.imag()) return;
   updateGuiElements(pgui, p_model);
-
-  double input = 0.0;
-  try {
-    input = std::stod(value.toStdString());
-  }
-  catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() <<endl;
-    input = 0.0;
-  }
-  FRAC[p_model->current_fractal].current_zconst = complex<double>(
-      FRAC[p_model->current_fractal].current_zconst.real(), input);
+  z = complex<double>(z.real(), *v);
   p_model->reset_fractal_and_reference_frame();
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void signal_escape_r(shared_ptr<FractalModel> p_model,
                      shared_ptr<tgui::Gui> pgui, const tgui::String &value) {
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  auto v = parseNumber(value);
+  if (!v || *v <= 0) return;  // 0 would make every point escape at once
   updateGuiElements(pgui, p_model);
-
-  double input = 0.0;
-  try {
-    input = std::stod(value.toStdString());
-  } catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() << endl;
-    input = 0.0;
-  }
-  FRAC[p_model->current_fractal].current_escape_r = input;
-  // p_model->reset_fractal_and_reference_frame();
+  FRAC[p_model->current_fractal].current_escape_r = *v;
   setGuiElementsFromModel(pgui, p_model);
 }
 
-void signalSamplingButton(shared_ptr<FractalModel> p_model) {
-  if (R.random_sample == true)
-    R.random_sample = false;
-  else
-    R.random_sample = true;
+void signalSamplingButton(shared_ptr<FractalModel> p_model, bool checked) {
+  if (R.random_sample == checked) return;  // set from the model, nothing changed
+  R.random_sample = checked;
 
   for (unsigned int tix = 0; tix < p_model->num_threads; ++tix) {
     thread_asked_to_reset[tix] = true;
@@ -2134,79 +2185,64 @@ void signalSamplingButton(shared_ptr<FractalModel> p_model) {
   }
 }
 
+// The lists show these in this order; the index is the list position
+const ColoringAlgo outside_styles[] = {ColoringAlgo::MULTICYCLE, ColoringAlgo::SMOOTH,
+                                       ColoringAlgo::USE_IMAGE, ColoringAlgo::SHADOW_MAP};
+const char *outside_style_names[] = {"Bands", "Smooth", "Image", "3D light"};
+const InteriorColoringAlgo inside_styles[] = {
+    InteriorColoringAlgo::SOLID, InteriorColoringAlgo::MULTICYCLE, InteriorColoringAlgo::USE_IMAGE,
+    InteriorColoringAlgo::TRIG,  InteriorColoringAlgo::DIST,       InteriorColoringAlgo::DIST2};
+const char *inside_style_names[] = {"Solid color",    "Orbit bands", "Image",
+                                    "Orbit angle",    "Orbit length", "Length waves"};
+
+// Band size list: 16, 32, ... 1024 (16 << index); other sizes from old keys
+// select the nearest entry at or above them
+int cycleIndex(int cycle_size) {
+  int i = 0;
+  while (i < 6 && (16 << i) < cycle_size) ++i;
+  return i;
+}
+
 void signalColorBox(const int selected) {
-  R.palette = static_cast<tinycolormap::ColormapType>(selected);
+  if (selected >= 0) R.palette = static_cast<tinycolormap::ColormapType>(selected);
 }
 
 void signalColorCycleBox(const int selected) {
-  R.color_cycle_size = (int)(8 * pow(2, selected));
+  if (selected >= 0) R.color_cycle_size = 16 << selected;
 }
 
 void signalCAlgoBox(const int selected) {
-  if (selected == 0)
-    R.color_algo = ColoringAlgo::MULTICYCLE;
-  else if (selected == 1)
-    R.color_algo = ColoringAlgo::SMOOTH;
-  else if ((selected == 2) && (true == R.image_loaded))
-    R.color_algo = ColoringAlgo::USE_IMAGE;
-  else if (selected == 3)
-    R.color_algo = ColoringAlgo::SHADOW_MAP;
+  if (selected < 0 || selected >= (int)std::size(outside_styles)) return;
+  ColoringAlgo a = outside_styles[selected];
+  if (a == ColoringAlgo::USE_IMAGE && !R.image_loaded) return;  // no image to use
+  R.color_algo = a;
 }
 
-void signalButton() {
-  if (R.reflect_palette == true)
-    R.reflect_palette = false;
-  else
-    R.reflect_palette = true;
-}
+void signalButton(bool checked) { R.reflect_palette = checked; }
 
 // Interior Color
 void signalIntColorAdj(shared_ptr<FractalModel> p_model,
                        shared_ptr<tgui::Gui> pgui, const tgui::String &value) {
-  unsigned int input = 0;
-  try {
-    input = (unsigned int)stoul(value.toStdString(),nullptr,0);
-    interior_color_adjust = input;
-  } catch (const std::invalid_argument &ia) {
-    cout << "Invalid " << ia.what() << endl;
-  } catch (...) {
-    // input = 0;
-  }
+  struct Clear { shared_ptr<tgui::Gui> g; ~Clear() { clearNumberBoxes(g); } } clear{pgui};
+  if (auto v = parseCount(value, 0)) interior_color_adjust = *v;
 }
 
 void signalIntColorBox(const int selected) {
-  RI.palette = static_cast<tinycolormap::ColormapType>(selected);
+  if (selected >= 0) RI.palette = static_cast<tinycolormap::ColormapType>(selected);
 }
 
 void signalIntColorCycleBox(const int selected) {
-  RI.color_cycle_size = (int)(8 * pow(2, selected));
+  if (selected >= 0) RI.color_cycle_size = 16 << selected;
 }
 
 void signalIntCAlgoBox(const int selected) {
-  if (selected == 0)
-    RI.color_algo = InteriorColoringAlgo::SOLID;
-  else if (selected == 1)
-    RI.color_algo = InteriorColoringAlgo::MULTICYCLE;
-  else if ((selected == 2) && (true == R.image_loaded))
-    RI.color_algo = InteriorColoringAlgo::USE_IMAGE;
-  else if (selected == 3)
-    RI.color_algo = InteriorColoringAlgo::TRIG;
-  else if (selected == 4)
-    RI.color_algo = InteriorColoringAlgo::TRIG2;
-  else if (selected == 5)
-    RI.color_algo = InteriorColoringAlgo::DIST;
-  else if (selected == 6)
-    RI.color_algo = InteriorColoringAlgo::DIST2;
-  else if (selected == 7)
-    RI.color_algo = InteriorColoringAlgo::TEMP;
+  if (selected < 0 || selected >= (int)std::size(inside_styles)) return;
+  InteriorColoringAlgo a = inside_styles[selected];
+  if (a == InteriorColoringAlgo::USE_IMAGE && !R.image_loaded) return;
+  RI.color_algo = a;
 }
 
-void signalIntButton() {
-  if (RI.reflect_palette == true)
-    RI.reflect_palette = false;
-  else
-    RI.reflect_palette = true;
-}
+void signalIntButton(bool checked) { RI.reflect_palette = checked; }
 
 const int max_saved = 30;
 SavedFractal no_fractal{0, 1.0};
@@ -2262,6 +2298,7 @@ void applyFractal(shared_ptr<FractalModel> p_model, const SavedFractal &s) {
   R.light_angle = r.light_angle;
   R.light_height = r.light_height;
   R.random_sample = r.random_sample;
+  R.auto_iterations = r.auto_iterations;
   if (R.color_algo == ColoringAlgo::USE_IMAGE && !R.image_loaded)
     R.color_algo = ColoringAlgo::MULTICYCLE;
   RI = s.RI;
@@ -2317,6 +2354,7 @@ json keyToJson(const SavedFractal &s) {
   j["zconst"] = json::array({s.current_zconst.real(), s.current_zconst.imag()});
   j["escape_radius"] = s.current_escape_r;
   j["random_sample"] = r.random_sample;
+  j["auto_iterations"] = r.auto_iterations;
   j["view"] = {{"x_start", r.xstart},
                {"y_start", r.ystart},
                {"zoom", r.displayed_zoom},
@@ -2393,6 +2431,7 @@ bool keyFromJson(const json &j, SavedFractal &s) {
   // Defaults are what the app starts with
   ReferenceFrame &r = s.RF;
   r.random_sample = keyField(j, "random_sample", false);
+  r.auto_iterations = keyField(j, "auto_iterations", false);  // old keys: fixed
   r.xstart = keyField(j, "view", "x_start", f.xMinMax[0]);
   r.ystart = keyField(j, "view", "y_start", f.yMinMax[0]);
   r.displayed_zoom = keyField(j, "view", "zoom", 1.0);
@@ -2472,12 +2511,14 @@ void signalLoadNextSaved(shared_ptr<FractalModel> p_model,
     }
   }
 
+  clearNumberBoxes(pgui);
   setGuiElementsFromModel(pgui, p_model);
 }
 
 void LoadLast(shared_ptr<FractalModel> p_model, shared_ptr<tgui::Gui> pgui) {
   updateGuiElements(pgui, p_model);
   if (Last.valid) applyFractal(p_model, Last);
+  clearNumberBoxes(pgui);
   setGuiElementsFromModel(pgui, p_model);
 }
 
@@ -2519,6 +2560,7 @@ void signalLoadNextKey(shared_ptr<FractalModel> p_model,
     }
   }
 
+  clearNumberBoxes(pgui);
   setGuiElementsFromModel(pgui, p_model);
 }
 
@@ -2556,6 +2598,27 @@ void signalLoadNextEscape(shared_ptr<FractalModel> p_model,
   setGuiElementsFromModel(pgui, p_model);
 }
 
+// Hover help for a widget
+void setTip(const tgui::Widget::Ptr &w, const std::string &text) {
+  auto tip = tgui::Label::create(text);
+  tip->setTextSize(14);
+  auto r = tip->getRenderer();
+  r->setBackgroundColor(tgui::Color(25, 25, 25, 240));
+  r->setTextColor(tgui::Color::White);
+  r->setBorders(1);
+  r->setBorderColor(tgui::Color(120, 120, 120));
+  r->setPadding({6, 4});
+  w->setToolTip(tip);
+}
+
+// A small caption above a column of controls
+void addHeading(shared_ptr<tgui::Gui> &pgui, const char *text, const char *x, const char *y) {
+  auto l = tgui::Label::create(text);
+  l->setTextSize(13);
+  l->setPosition(x, y);
+  pgui->add(l);
+}
+
 // The main GUI elements inside the view
 void createGuiElements(shared_ptr<tgui::Gui> pgui,
                        shared_ptr<FractalModel> &p_model) {
@@ -2565,35 +2628,15 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   current->setTextSize(14);
   pgui->add(current, "fractal_label");
 
-  current = tgui::Label::create();
-  current->setPosition("parent.left + 250", "parent.bottom - 300");
-  current->setTextSize(14);
-  pgui->add(current, "progress_label");
 
   current = tgui::Label::create();
   current->setPosition("parent.left", "parent.bottom - 300 + 20");
   current->setTextSize(14);
   pgui->add(current, "secs_label");
 
-  current = tgui::Label::create();
-  current->setPosition("parent.left + 150", "parent.bottom - 300 + 20");
-  current->setTextSize(14);
-  pgui->add(current, "fps_label");
 
-  current = tgui::Label::create();
-  current->setPosition("parent.left + 280", "parent.bottom - 300 + 20");
-  current->setTextSize(14);
-  pgui->add(current, "sps_label");
 
-  current = tgui::Label::create();
-  current->setPosition("parent.left + 400", "parent.bottom - 300 + 20");
-  current->setTextSize(14);
-  pgui->add(current, "threads_label");
 
-  current = tgui::Label::create();
-  current->setPosition("parent.left + 500", "parent.bottom - 300 + 20");
-  current->setTextSize(14);
-  pgui->add(current, "cuda_label");
 
   current = tgui::Label::create();
   current->setPosition("parent.left", "parent.bottom - 300 + 40");
@@ -2642,7 +2685,8 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50", "parent.bottom - 150");
   editBox->setDefaultText("2");
   pgui->add(editBox, "power_box");
-  editBox->onTextChange(signalPower, p_model, pgui);
+  setTip(editBox, "Power p in z -> z^p + c (2 is the classic Mandelbrot).\nType a number and press Enter.");
+  editBox->onReturnOrUnfocus(signalPower, p_model, pgui);
 
   current = tgui::Label::create();
   current->setPosition("parent.left + 50", "parent.bottom - 210");
@@ -2655,7 +2699,10 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50 + 120", "parent.bottom - 150");
   editBox->setDefaultText("");
   pgui->add(editBox, "max_iters_box2");
-  editBox->onTextChange(signalMIters, p_model, pgui,2);
+  setTip(editBox, "Max iterations (Buddhabrot: blue channel): how long an orbit is followed\n"
+                  "before the point counts as inside the set. More shows finer detail\n"
+                  "but takes longer. Mandelbrot and Julia use the top box only.");
+  editBox->onReturnOrUnfocus(signalMIters, p_model, pgui,2);
 
   editBox = tgui::EditBox::create();
   editBox->setSize(100, 20);
@@ -2663,7 +2710,10 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50 + 120", "parent.bottom - 180");
   editBox->setDefaultText("");
   pgui->add(editBox, "max_iters_box1");
-  editBox->onTextChange(signalMIters, p_model, pgui, 1);
+  setTip(editBox, "Max iterations (Buddhabrot: green channel): how long an orbit is followed\n"
+                  "before the point counts as inside the set. More shows finer detail\n"
+                  "but takes longer. Mandelbrot and Julia use the top box only.");
+  editBox->onReturnOrUnfocus(signalMIters, p_model, pgui, 1);
 
   editBox = tgui::EditBox::create();
   editBox->setSize(100, 20);
@@ -2671,15 +2721,36 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50 + 120", "parent.bottom - 210");
   editBox->setDefaultText("");
   pgui->add(editBox, "max_iters_box0");
-  editBox->onTextChange(signalMIters, p_model, pgui, 0);
+  setTip(editBox, "Max iterations (Buddhabrot: red channel): how long an orbit is followed\n"
+                  "before the point counts as inside the set. More shows finer detail\n"
+                  "but takes longer. Mandelbrot and Julia use the top box only.");
+  editBox->onReturnOrUnfocus(signalMIters, p_model, pgui, 0);
 
   auto cbox = tgui::CheckBox::create();
+  cbox->setPosition("parent.left + 50", "parent.bottom - 190");
+  cbox->setSize(16, 16);
+  cbox->setText("Auto");
+  cbox->setTextSize(13);
+  cbox->setChecked(R.auto_iterations);
+  pgui->add(cbox, "AutoIterations");
+  setTip(cbox, "Auto iterations (Mandelbrot and Julia): the value in the box is a base that\n"
+               "grows as you zoom in (x5 at zoom 1e-4, x14 at 1e-13). Points near the\n"
+               "boundary need more steps to escape; with too few they count as inside.\n"
+               "Off: the box value is used as is.");
+  cbox->onChange([p_model](bool checked) {
+    if (R.auto_iterations == checked) return;
+    R.auto_iterations = checked;
+    for (unsigned int tix = 0; tix < p_model->num_threads; ++tix) thread_asked_to_reset[tix] = true;
+  });
+
+  cbox = tgui::CheckBox::create();
   cbox->setPosition("parent.left + 50 + 250", "parent.bottom - -210");
-  cbox->setText("Random\nSample");
+  cbox->setText("Random\nsampling");
   cbox->setSize(30, 30);
   pgui->add(cbox, "RandomSample");
+  setTip(cbox, "Buddhabrot: pick sample points at random instead of on a grid");
   cbox->onChange(signalSamplingButton, p_model);
-  cbox->setChecked(true);
+  cbox->setChecked(R.random_sample);
 
   current = tgui::Label::create();
   current->setPosition("parent.left + 50", "parent.bottom - 100 - 20");
@@ -2692,7 +2763,8 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50", "parent.bottom - 100");
   editBox->setDefaultText("0");
   pgui->add(editBox, "zconst_real_box");
-  editBox->onTextChange(signalZconstr, p_model, pgui);
+  setTip(editBox, "Julia constant c, real part (Julia sets only)");
+  editBox->onReturnOrUnfocus(signalZconstr, p_model, pgui);
 
   editBox = tgui::EditBox::create();
   editBox->setSize(100, 20);
@@ -2700,7 +2772,8 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50 + 120", "parent.bottom - 100");
   editBox->setDefaultText("0");
   pgui->add(editBox, "zconst_imag_box");
-  editBox->onTextChange(signalZconsti, p_model, pgui);
+  setTip(editBox, "Julia constant c, imaginary part (Julia sets only)");
+  editBox->onReturnOrUnfocus(signalZconsti, p_model, pgui);
 
   current = tgui::Label::create();
   current->setPosition("parent.left + 50", "parent.bottom - 80");
@@ -2713,22 +2786,25 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   editBox->setPosition("parent.left + 50 + 120", "parent.bottom - 60");
   editBox->setDefaultText("0");
   pgui->add(editBox, "escape_r_box");
-  editBox->onTextChange(signal_escape_r, p_model, pgui);
+  setTip(editBox, "Escape radius: an orbit that gets this far from 0 counts as escaped (default 2)");
+  editBox->onReturnOrUnfocus(signal_escape_r, p_model, pgui);
 
   // Save Fractal Group
 
   auto button = tgui::Button::create();
   button->setPosition("parent.left + 400", "parent.bottom - 150");
-  button->setText("Save Fractal");
+  button->setText("Remember view");
   button->setSize(120, 30);
   pgui->add(button, "SaveFractal");
+  setTip(button, "Remember this view in memory (up to 30, gone when the app exits)");
   button->onPress(signalSaveFractal, p_model, pgui);
 
   button = tgui::Button::create();
   button->setPosition("parent.left + 400", "parent.bottom - 100");
-  button->setText("Load Next Saved");
+  button->setText("Next remembered");
   button->setSize(120, 30);
   pgui->add(button, "LoadNextSaved");
+  setTip(button, "Go to the next remembered view");
   button->onPress(signalLoadNextSaved, p_model, pgui);
 
   current = tgui::Label::create();
@@ -2738,16 +2814,18 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   
   button = tgui::Button::create();
   button->setPosition("parent.left + 600", "parent.bottom - 150");
-  button->setText("Save Key");
+  button->setText("Save key file");
   button->setSize(120, 30);
   pgui->add(button, "SaveKey");
+  setTip(button, "Save this view as a JSON key file in FractalsData/keys (see fractals --help)");
   button->onPress(signalSaveKey, p_model, pgui, "");
 
   button = tgui::Button::create();
   button->setPosition("parent.left + 600", "parent.bottom - 100");
-  button->setText("Load Next Key");
+  button->setText("Next key file");
   button->setSize(120, 30);
   pgui->add(button, "LoadNextKey");
+  setTip(button, "Load the next key file from FractalsData/keys (in name order)");
   button->onPress(signalLoadNextKey, p_model, pgui);
 
   current = tgui::Label::create();
@@ -2764,34 +2842,47 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   }
 
   pgui->add(lbox, "ColorBox");
+  addHeading(pgui, "Outside coloring", "parent.left + 800", "parent.bottom - 340");
+  addHeading(pgui, "Palette", "parent.left + 800", "parent.bottom - 320");
+  setTip(lbox, "Palette for the outside of the set (points that escape)");
   lbox->onItemSelect(signalColorBox);
 
   lbox = tgui::ListBox::create();
   lbox->setPosition("parent.left + 900", "parent.bottom - 300");
-  lbox->setSize(60.f, 130.f);
+  lbox->setSize(60.f, 155.f);
   for (auto e : NSR.color_cycle_size_names) {
     lbox->addItem(e);
   }
 
   pgui->add(lbox, "CycleBox");
+  addHeading(pgui, "Band size", "parent.left + 900", "parent.bottom - 320");
+  setTip(lbox, "Band size: how many iterations one pass through the palette spans\n"
+               "(16: narrow bands, 1024: wide). Used by Bands and 3D light outside and\n"
+               "Orbit bands inside; the UF16 palette always has 16 bands.\n"
+               "3D light uses 256 steps: 512 and 1024 use only part of the palette there.");
   lbox->onItemSelect(signalColorCycleBox);
 
   cbox = tgui::CheckBox::create();
-  cbox->setPosition("parent.left + 900", "parent.bottom - 150");
-  cbox->setText("Reflect");
-  cbox->setSize(30, 30);
+  cbox->setPosition("parent.left + 900", "parent.bottom - 142");
+  cbox->setText("Mirror");
+  cbox->setSize(22, 22);
+  cbox->setChecked(R.reflect_palette);
   pgui->add(cbox, "Reflect");
+  setTip(cbox, "Run the palette back and forth instead of jumping from its end to its start");
   cbox->onChange(signalButton);
 
   lbox = tgui::ListBox::create();
-  lbox->setPosition("parent.left + 900", "parent.bottom - 120");
-  lbox->setSize(100.f, 100.f);
-  lbox->addItem("MULTICYCLE");
-  lbox->addItem("SMOOTH");
-  lbox->addItem("USE_IMAGE");
-  lbox->addItem("SHADOW_MAP");
+  lbox->setPosition("parent.left + 900", "parent.bottom - 96");
+  lbox->setSize(100.f, 88.f);
+  for (const char *name : outside_style_names) lbox->addItem(name);
 
   pgui->add(lbox, "CAlgoBox");
+  addHeading(pgui, "Style", "parent.left + 900", "parent.bottom - 114");
+  setTip(lbox, "How the outside is colored:\n"
+               "Bands: by iteration count, cycling through the palette\n"
+               "Smooth: continuous colors across the whole palette\n"
+               "Image: from a picture in FractalsData/escape_images (n: next picture)\n"
+               "3D light: shading, as if lit from one side");
   lbox->onItemSelect(signalCAlgoBox);
 
   // Interior Coloring Column
@@ -2803,48 +2894,66 @@ void createGuiElements(shared_ptr<tgui::Gui> pgui,
   }
 
   pgui->add(lbox, "IntColorBox");
+  addHeading(pgui, "Inside coloring", "parent.left + 1000", "parent.bottom - 340");
+  addHeading(pgui, "Palette", "parent.left + 1000", "parent.bottom - 320");
+  setTip(lbox, "Palette for the inside of the set (points that never escape)");
   lbox->onItemSelect(signalIntColorBox);
 
   lbox = tgui::ListBox::create();
   lbox->setPosition("parent.left + 1100", "parent.bottom - 300");
-  lbox->setSize(60.f, 130.f);
+  lbox->setSize(60.f, 155.f);
   for (auto e : NSR.color_cycle_size_names) {
     lbox->addItem(e);
   }
 
   pgui->add(lbox, "IntCycleBox");
+  addHeading(pgui, "Band size", "parent.left + 1100", "parent.bottom - 320");
+  setTip(lbox, "Band size: how many iterations one pass through the palette spans\n"
+               "(16: narrow bands, 1024: wide). Used by Bands and 3D light outside and\n"
+               "Orbit bands inside; the UF16 palette always has 16 bands.\n"
+               "3D light uses 256 steps: 512 and 1024 use only part of the palette there.");
   lbox->onItemSelect(signalIntColorCycleBox);
 
   cbox = tgui::CheckBox::create();
-  cbox->setPosition("parent.left + 1100", "parent.bottom - 150");
-  cbox->setText("Reflect");
-  cbox->setSize(30, 30);
+  cbox->setPosition("parent.left + 1100", "parent.bottom - 142");
+  cbox->setText("Mirror");
+  cbox->setSize(22, 22);
+  cbox->setChecked(RI.reflect_palette);
   pgui->add(cbox, "IntReflect");
+  setTip(cbox, "Run the inside palette back and forth");
   cbox->onChange(signalIntButton);
 
   lbox = tgui::ListBox::create();
   lbox->setPosition("parent.left + 1200", "parent.bottom - 270");
-  lbox->setSize(100.f, 160.f);
-  lbox->addItem("SOLID");
-  lbox->addItem("MULTICYCLE");
-  lbox->addItem("USE_IMAGE");
-  lbox->addItem("TRIG");
-  lbox->addItem("TRIG2");
-  lbox->addItem("DIST");
-  lbox->addItem("DIST2");
-  lbox->addItem("TEMP");
+  lbox->setSize(110.f, 130.f);
+  for (const char *name : inside_style_names) lbox->addItem(name);
 
   pgui->add(lbox, "IntCAlgoBox");
+  addHeading(pgui, "Style", "parent.left + 1200", "parent.bottom - 320");
+  setTip(lbox, "How the inside is colored:\n"
+               "Solid color: one color, set in the box above (0xBBGGRR)\n"
+               "Orbit bands: by how far the orbit travels, through the palette\n"
+               "Image: a picture from FractalsData/escape_images, by position\n"
+               "Orbit angle: from where the orbit ends and how far it travels\n"
+               "Orbit length: red/green/blue from how far the orbit travels\n"
+               "Length waves: waves in the orbit length\n"
+               "The box above scales the effect.");
   lbox->onItemSelect(signalIntCAlgoBox);
 
 
   editBox = tgui::EditBox::create();
-  editBox->setSize(100, 20);
+  editBox->setSize(110, 20);
   editBox->setTextSize(14);
   editBox->setPosition("parent.left + 1200", "parent.bottom - 300");
   editBox->setDefaultText("dec triple");
   pgui->add(editBox, "interior_color_adjust");
-  editBox->onTextChange(signalIntColorAdj, p_model, pgui);
+  setTip(editBox, "Inside adjust. Solid color: the color as 0xBBGGRR, e.g. 0x0000ff is red\n"
+                  "(decimal works too). Other styles: a scale factor. Enter to apply.");
+  editBox->onReturnOrUnfocus(signalIntColorAdj, p_model, pgui);
+
+  for (auto &w : pgui->getWidgets())
+    if (auto label = std::dynamic_pointer_cast<tgui::Label>(w))
+      label->getRenderer()->setBackgroundColor(tgui::Color(0, 0, 0, 150));
 
   pgui->add(menu);  // to be on top
 
@@ -2862,51 +2971,65 @@ void updateGuiElements(shared_ptr<tgui::Gui> &pgui,
 // When some per model control changes: f.e. theta
 void setGuiElementsFromModel(shared_ptr<tgui::Gui> &pgui,
                              shared_ptr<FractalModel> &p_model) {
-  // R.palette
-  auto current = pgui->get<tgui::ListBox>("ColorBox");
-  current->setSelectedItemByIndex(static_cast<int>(R.palette));
+  auto select = [&](const char *name, int index) {
+    auto box = pgui->get<tgui::ListBox>(name);
+    if (box && box->getSelectedItemIndex() != index) box->setSelectedItemByIndex(index);
+  };
+  auto check = [&](const char *name, bool on) {
+    auto box = pgui->get<tgui::CheckBox>(name);
+    if (box && box->isChecked() != on) box->setChecked(on);  // the handlers set, not toggle
+  };
+  auto position = [](const auto &list, auto value) {
+    for (size_t i = 0; i < std::size(list); ++i)
+      if (list[i] == value) return (int)i;
+    return -1;
+  };
+  select("ColorBox", static_cast<int>(R.palette));
+  select("CycleBox", cycleIndex(R.color_cycle_size));
+  select("CAlgoBox", position(outside_styles, R.color_algo));
+  check("Reflect", R.reflect_palette);
+  select("IntColorBox", static_cast<int>(RI.palette));
+  select("IntCycleBox", cycleIndex(RI.color_cycle_size));
+  select("IntCAlgoBox", position(inside_styles, RI.color_algo));
+  check("IntReflect", RI.reflect_palette);
+  check("RandomSample", R.random_sample);
+  check("AutoIterations", R.auto_iterations);
 }
 
 // update current things every draw even if no change
 void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
                               shared_ptr<FractalModel> &p_model, float secs,
                               float fps) {
+  refreshNumberBoxes(pgui, p_model);
+
+  // One label per status row, parts separated by spaces, so longer values
+  // push the rest along instead of running into the next label
+  const SupportedFractal &f = FRAC[p_model->current_fractal];
+  const std::string gap = "      ";
+
+  std::string row1 = "Fractal: " + f.name;
+  if (f.probabalistic)  // only the Buddhabrots accumulate hits
+    row1 += gap + "Brightest pixel R/G/B: " + to_string(p_model->maxred) + "/" +
+            to_string(p_model->maxgreen) + "/" + to_string(p_model->maxblue) +
+            " hits, total " + formatCount((double)p_model->hitsums);
   auto current = pgui->get<tgui::Label>("fractal_label");
-  current->setText("Fractal: " + FRAC[p_model->current_fractal].name);
+  current->setText(row1);
 
-  current = pgui->get<tgui::Label>("progress_label");
-  current->setText("Progress: " + to_string(p_model->maxred) + "/" +
-                   to_string(p_model->maxgreen) + "/" +
-                   to_string(p_model->maxblue) + "  " +
-                   to_string(p_model->hitsums));
-
+  std::string gpu;
+  if (p_model->cuda_detected == false || !has_gpu_kernel(f))
+    gpu = "GPU: n/a";  // no usable GPU (see the log), or no kernel for this fractal
+  else if (!f.cuda_mode)
+    gpu = "GPU: off (c)";
+  else if (f.probabalistic || p_model->gpu_rendered)
+    gpu = "GPU: on";
+  else
+    gpu = "GPU: starting";  // switched on, no GPU frame yet
   current = pgui->get<tgui::Label>("secs_label");
-  current->setText("Secs: " + to_string(secs));
-
-  current = pgui->get<tgui::Label>("fps_label");
-  current->setText("fps: " + to_string(fps));
-
-  current = pgui->get<tgui::Label>("sps_label");
-  current->setText(
-      "sps: " +
-      to_string(p_model->stats[p_model->current_fractal].samples_per_second));
-
-  current = pgui->get<tgui::Label>("threads_label");
-  current->setText("Threads: " + to_string(p_model->num_threads));
-
-  current = pgui->get<tgui::Label>("cuda_label");
-  {
-    const SupportedFractal &f = FRAC[p_model->current_fractal];
-    bool has_kernel = has_gpu_kernel(f);
-    if (p_model->cuda_detected == false || !has_kernel)
-      current->setText("Cuda N/A");  // no usable GPU (see the log), or no kernel for this fractal
-    else if (!f.cuda_mode)
-      current->setText("Cuda Off");
-    else if (f.probabalistic || p_model->gpu_rendered)
-      current->setText("Cuda Running");
-    else
-      current->setText("Cuda Starting");  // switched on, no GPU frame yet
-  }
+  current->setText("Time: " + to_string((int)secs) + " s" + gap +
+                   "fps: " + to_string((int)(fps + 0.5f)) + gap +
+                   "Samples/s: " +
+                   formatCount((double)p_model->stats[p_model->current_fractal].samples_per_second) +
+                   gap + "Threads: " + to_string(p_model->num_threads) + gap + gpu);
 
   std::string zoom_string;
   std::ostringstream out;
@@ -2915,57 +3038,54 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   zoom_string = out.str();
 
   current = pgui->get<tgui::Label>("boundary_label");
-  current->setText("Boundary: [" + to_string(R.xstart) + "->" +
-                   to_string(R.xstart + (R.original_width) * R.xdelta) + "]/[" +
-                   to_string(R.ystart) + "->" +
-                   to_string(R.ystart + (R.original_height) * R.ydelta) + "]" +
-                   " Zoom: " + zoom_string);
+  current->setText("View: x " + formatNumber(R.xstart) + " .. " +
+                   formatNumber(R.xstart + (R.original_width) * R.xdelta) + ", y " +
+                   formatNumber(R.ystart) + " .. " +
+                   formatNumber(R.ystart + (R.original_height) * R.ydelta) +
+                   ", zoom " + formatNumber(R.displayed_zoom));
 
-  current = pgui->get<tgui::Label>("stats_label");
-  current->setText(
-      "Stats: rejected/total : escaped/in -> " +
-      to_string(p_model->stats[p_model->current_fractal].rejected) + "/" +
-      to_string(p_model->stats[p_model->current_fractal].total) + " : " +
-      to_string(p_model->stats[p_model->current_fractal].escaped_set) + "/" +
-      to_string(p_model->stats[p_model->current_fractal].in_set) + " : " +
-      to_string(100.0 * p_model->stats[p_model->current_fractal].rejected /
-                (p_model->stats[p_model->current_fractal].total)) +
-      "%" + " : " +
-      to_string(p_model->stats[p_model->current_fractal].escaped_set /
-                (static_cast<double>(
-                    p_model->stats[p_model->current_fractal].in_set +
-                    p_model->stats[p_model->current_fractal].escaped_set))) +
-      "% total");
+  {
+    const SampleStats &st = p_model->stats[p_model->current_fractal];
+    std::string escaped = formatPercent((double)st.escaped_set, (double)st.in_set + (double)st.escaped_set);
+    current = pgui->get<tgui::Label>("stats_label");
+    if (FRAC[p_model->current_fractal].probabalistic) {
+      std::string skipped = formatPercent((double)st.rejected, (double)st.total);
+      current->setText("Samples: " + formatCount((double)st.total) + ", skipped (known inside) " +
+                       skipped + ", escaped " + escaped);
+    } else {
+      current->setText("Points computed: " + formatCount((double)st.total) + ", escaped " + escaped);
+    }
+  }
 
   // Params column
+  // The boxes show the values; the labels name them
   current = pgui->get<tgui::Label>("power_label");
-  current->setText(
-      "Power: " +
-      to_string(FRAC[p_model->current_fractal].current_power).substr(0, 4));
+  current->setText("Power");
+
+  if (auto autobox = pgui->get<tgui::CheckBox>("AutoIterations")) {
+    const SupportedFractal &fr = FRAC[p_model->current_fractal];
+    std::string text = has_escape_kernel(fr) ? "Auto (" + to_string(effective_iters(fr)) + ")" : "Auto (n/a)";
+    if (autobox->getText() != text) autobox->setText(text);
+  }
 
   current = pgui->get<tgui::Label>("miters_label");
-  current->setText(
-      "Max iterations: \n" +
-      to_string(FRAC[p_model->current_fractal].current_max_iters[0]) + " " +
-      to_string(FRAC[p_model->current_fractal].current_max_iters[1]) + " " +
-      to_string(FRAC[p_model->current_fractal].current_max_iters[2]));
+  current->setText(FRAC[p_model->current_fractal].probabalistic ? "Max iterations\n(red, green, blue)"
+                                                                 : "Max iterations");
 
   current = pgui->get<tgui::Label>("zconst_label");
-  current->setText(
-      "z_const: " +
-      to_string(FRAC[p_model->current_fractal].current_zconst.real()) + " + " +
-      to_string(FRAC[p_model->current_fractal].current_zconst.imag()) + "*i");
+  current->setText("Julia constant (real, imaginary)");
 
   current = pgui->get<tgui::Label>("escape_r_label");
-  current->setText("Escape R: " +
-                   to_string(FRAC[p_model->current_fractal].current_escape_r));
+  current->setText("Escape radius");
 
   current = pgui->get<tgui::Label>("saved_fractal_label");
-  current->setText("Fractal ix: " + to_string(displayed_frac_ix));
+  current->setText(displayed_frac_ix < 0 ? "Remembered: none shown"
+                                         : "Remembered view " + to_string(displayed_frac_ix + 1));
 
   current = pgui->get<tgui::Label>("keys_label");
-  current->setText("Key ix: " + to_string(last_loaded_key_ix) + "/" +
-                   to_string(key_count));
+  current->setText(last_loaded_key_ix < 0 ? "Key files: " + to_string(key_count)
+                                          : "Key file " + to_string(last_loaded_key_ix + 1) +
+                                                " of " + to_string(key_count));
 }
 
 void display_all_widgets(shared_ptr<tgui::Gui> &pgui, bool maybe) {
@@ -3080,6 +3200,8 @@ Folders:
   written out only when missing, so edits and additions are kept.
 
 Fractal keys (JSON):
+  "auto_iterations": true raises max_iterations with the zoom (Mandelbrot and
+  Julia; keys without it use max_iterations as is).
   A key describes one image: the fractal, its parameters, the view, coloring
   and lighting. Every field except "fractal" is optional (a missing field gets
   its default) and unknown fields are ignored. Names are used for enums.
@@ -3105,7 +3227,7 @@ Fractal keys (JSON):
   coloring:   algo MULTICYCLE, SMOOTH, USE_IMAGE or SHADOW_MAP; palette Parula,
               Heat, Jet, Turbo, Hot, Gray, Magma, Inferno, Plasma, Viridis,
               Cividis, Github, Cubehelix or UF16
-  interior:   algo SOLID, MULTICYCLE, USE_IMAGE, TRIG, TRIG2, DIST, DIST2 or TEMP
+  interior:   algo SOLID, MULTICYCLE, USE_IMAGE, TRIG, DIST or DIST2
   tools/make_fractal_movies.py animates a key into a GIF and MP4s.
 
 While running: the Help menu lists the keys (c: CUDA on/off, s: screenshot,
@@ -3353,6 +3475,7 @@ int main(int argc, char **argv) {
   update_and_draw = true;
 
   // Track attempted crops with mouse
+  bool cropping = false;  // a left-button drag that started on the fractal
   int crop_start_x = 0;
   int crop_start_y = 0;
   int crop_end_x = 0;
@@ -3371,9 +3494,15 @@ int main(int argc, char **argv) {
     while (const std::optional event = window.pollEvent()) {
       if (event->is<sf::Event::Closed>()) window.close();  // breaks out above
 
+      // The GUI sees every event first and says whether a widget took it
+      bool gui_took_event = pgui->handleEvent(*event);
+      // While a number box has focus, keys are text: typing "1e-3" must not
+      // press e (exit), c (CUDA), s (screenshot), ...
+      bool typing = std::dynamic_pointer_cast<tgui::EditBox>(pgui->getFocusedLeaf()) != nullptr;
+
       // Handle keyboard control commands
 
-      if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
+      if (const auto* keyPressed = typing ? nullptr : event->getIf<sf::Event::KeyPressed>()) {
         if (keyPressed->scancode == sf::Keyboard::Scancode::G) {
           if (display_gui == false) {
             display_gui = true;
@@ -3455,9 +3584,10 @@ int main(int argc, char **argv) {
       } //keypressed
       
 
-        // Handle Mouse
+        // Handle Mouse (only events no GUI widget took: scrolling a list or
+        // clicking a button must not zoom, pan or crop the fractal)
         // Zoom the whole sim if mouse wheel moved
-        if (const auto* scrollEvent = event->getIf<sf::Event::MouseWheelScrolled>()) {
+        if (const auto* scrollEvent = gui_took_event ? nullptr : event->getIf<sf::Event::MouseWheelScrolled>()) {
             SaveLast(p_model);
             double newzoom =
                 get_new_zoom(modelview, (int)scrollEvent->delta);
@@ -3469,7 +3599,7 @@ int main(int argc, char **argv) {
         }
 
         // record center for right mouse button and crop for left
-        if (const auto* mouseButton = event->getIf<sf::Event::MouseButtonPressed>()) {
+        if (const auto* mouseButton = gui_took_event ? nullptr : event->getIf<sf::Event::MouseButtonPressed>()) {
             if (mouseButton->button == sf::Mouse::Button::Right) {
             // Pan
             SaveLast(p_model);
@@ -3489,17 +3619,19 @@ int main(int argc, char **argv) {
             sf::Vector2i pos = windowToImage(window, mouseButton->position);
             crop_start_x = pos.x;
             crop_start_y = pos.y;
+            cropping = true;
             }
         }
 
-        // Crop finish
+        // Crop finish: only for a crop that started on the fractal
         if (const auto* mouseButton = event->getIf<sf::Event::MouseButtonReleased>()) {
-            if (mouseButton->button == sf::Mouse::Button::Left) {
+            if (mouseButton->button == sf::Mouse::Button::Left && cropping) {
+            cropping = false;
             sf::Vector2i pos = windowToImage(window, mouseButton->position);
             crop_end_x = pos.x;
             crop_end_y = pos.y;
 
-            // Hopefully this filters out menu clicks
+            // A plain click (no drag) is not a crop
             if (abs(crop_end_x - crop_start_x) > 10) {
               cout << "maintaining aspect ratio" << endl;
               // We cant do this directly - we have to combine pan and zoom
@@ -3522,13 +3654,12 @@ int main(int argc, char **argv) {
         }
 
         // Draw selection while button not released
-        if (event->is<sf::Event::MouseMoved>() &&
-            sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
+        if (event->is<sf::Event::MouseMoved>() && cropping) {
 
             const auto& mouseMove = event->getIf<sf::Event::MouseMoved>();
             sf::Vector2i movePos = windowToImage(window, mouseMove->position);
-          // Hopefully this filters out menu clicks
-          if (abs(crop_end_x - crop_start_x) > 10) {
+          // Show the rectangle once the drag is wide enough to be a crop
+          if (abs(movePos.x - crop_start_x) > 10) {
             selection.setSize(
                 sf::Vector2f(abs((float)crop_start_x - movePos.x),
                              abs((float)crop_start_y - movePos.y)));
@@ -3542,10 +3673,6 @@ int main(int argc, char **argv) {
           }
         }
 
-        // Clear the control coming from the gui
-        if (event) {
-            pgui->handleEvent(*event);  // Dereference the optional to get sf::Event&
-        }
       }
       ++frames;
 
