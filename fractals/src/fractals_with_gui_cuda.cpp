@@ -6,6 +6,8 @@
 #include <TGUI/Backend/SFML-Graphics.hpp>
 #include <algorithm>
 #include <atomic>
+#include <memory>
+#include <mutex>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -219,12 +221,56 @@ class NSReferenceFrame {
                              string("Github"),
                              string("Cubehelix"),
                              string("UF16")};
-  sf::Texture escape_texture;
-  sf::Image escape_image;
 };  // NSReferenceFrame
 
 ReferenceFrame R(0, 1.0);
 NSReferenceFrame NSR;  // non serializable
+
+// The image for USE_IMAGE coloring (outside and inside the set). Loading one
+// (the n key) swaps in a new, never-modified object. Each render thread takes
+// a snapshot for its slice, so an image is never changed or freed while a
+// thread reads it; replacing it in place crashed when n was pressed quickly.
+struct EscapeImage {
+  sf::Image image;
+  unsigned int w = 0, h = 0;
+};
+std::mutex escape_image_mutex;
+std::shared_ptr<const EscapeImage> escape_image_current;  // guarded by the mutex
+thread_local const EscapeImage *t_escape_image = nullptr;  // this thread's snapshot
+
+std::shared_ptr<const EscapeImage> snapshot_escape_image() {
+  std::lock_guard<std::mutex> lock(escape_image_mutex);
+  return escape_image_current;
+}
+
+bool load_escape_image(const std::string &file) {
+  auto img = std::make_shared<EscapeImage>();
+  if (!img->image.loadFromFile(file)) return false;
+  img->w = img->image.getSize().x;
+  img->h = img->image.getSize().y;
+  if (img->w == 0 || img->h == 0) return false;
+  {
+    std::lock_guard<std::mutex> lock(escape_image_mutex);
+    escape_image_current = img;
+  }
+  R.escape_image_w = img->w;
+  R.escape_image_h = img->h;
+  R.image_loaded = true;
+  std::cout << "Loaded escape_image " << file << " Dims: " << img->w << " " << img->h
+            << std::endl;
+  return true;
+}
+
+// The color at (x, y) in [0, 1) of this thread's image; black if there is none
+sf::Color escape_image_color(double x, double y) {
+  const EscapeImage *img = t_escape_image;
+  if (!img) return sf::Color::Black;
+  auto index = [](double v, unsigned int n) {
+    return v >= 0 ? (unsigned int)std::min(v, (double)(n - 1)) : 0u;  // also catches NaN
+  };
+  return img->image.getPixel(
+      sf::Vector2u(index(x * (img->w - 1), img->w), index(y * (img->h - 1), img->h)));
+}
 
 
 class ReferenceFrameInt {
@@ -522,10 +568,7 @@ inline void get_iteration_color(const int iter_ix, const int iters_max,
     yi = abs(modf(zfinal.imag() * 2, &ri));
     // xi = abs(zfinal.real() - (long long)zfinal.real());
     // yi = abs(zfinal.imag() - (long long)zfinal.imag());
-    sf::Color color = NSR.escape_image.getPixel(sf::Vector2u(
-                                     (unsigned int)(xi * (R.escape_image_w - 1)),
-                                     (unsigned int)(yi * (R.escape_image_h - 1))
-                                     ));
+    sf::Color color = escape_image_color(xi, yi);
     *p_rcolor = color.r;
     *p_gcolor = color.g;
     *p_bcolor = color.b;
@@ -702,9 +745,7 @@ inline void get_iteration_interior_color(const complex<double> &zstart,
           zstart.imag() * (2 / (interior_color_adjust * R.displayed_zoom)), &ri));
       // xi = abs(zstart.real() - (long long)zstart.real());
       // yi = abs(zstart.imag() - (long long)zstart.imag());
-      double xp = (xi) * (R.escape_image_w - 1);
-      double yp = (yi) * (R.escape_image_h - 1);
-      sf::Color color = NSR.escape_image.getPixel(sf::Vector2u((unsigned int)xp, (unsigned int)yp));
+      sf::Color color = escape_image_color(xi, yi);
       *p_rcolor = color.r;
       *p_gcolor = color.g;
       *p_bcolor = color.b;
@@ -1656,6 +1697,14 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
     unsigned int xe = (tix + 1) * xrange;
     if (tix == num_threads - 1) xe = (unsigned int)R.original_width;
 
+    // The USE_IMAGE coloring reads this snapshot; it stays alive (and
+    // unchanged) for the whole slice even if n loads another image meanwhile
+    std::shared_ptr<const EscapeImage> escape_image = snapshot_escape_image();
+    t_escape_image = escape_image.get();
+    struct ClearSnapshot {
+      ~ClearSnapshot() { t_escape_image = nullptr; }
+    } clear_snapshot;
+
     const SupportedFractal &f = FRAC[current_fractal];
     if (f.cuda_mode && cuda_detected && has_escape_kernel(f)) {
       // The GPU computes the orbits of this thread's columns; the coloring
@@ -2491,15 +2540,7 @@ void signalLoadNextEscape(shared_ptr<FractalModel> p_model,
     ix++;
   }
 
-  if (NSR.escape_texture.loadFromFile(filename.c_str())) {
-    NSR.escape_image = NSR.escape_texture.copyToImage();
-    sf::Vector2u escape_image_dims = NSR.escape_image.getSize();
-    R.escape_image_w = escape_image_dims.x;
-    R.escape_image_h = escape_image_dims.y;
-    cout << "Loaded escape_image " << filename << " Dims: " << R.escape_image_w
-         << " " << R.escape_image_h << endl;
-    R.image_loaded = true;
-  }
+  load_escape_image(filename);
 
   setGuiElementsFromModel(pgui, p_model);
 }
@@ -3217,20 +3258,7 @@ int main(int argc, char **argv) {
   std::string escape_file2 =
       escape_dir + separator + std::string("escape_image.png");
   // R.color_algo = ColoringAlgo::USE_IMAGE;
-  std::string loaded;
-  if (NSR.escape_texture.loadFromFile(escape_file1))
-    loaded = escape_file1;
-  else if (NSR.escape_texture.loadFromFile(escape_file2))
-    loaded = escape_file2;
-  if (!loaded.empty()) {
-    NSR.escape_image = NSR.escape_texture.copyToImage();
-    sf::Vector2u escape_image_dims = NSR.escape_image.getSize();
-    R.escape_image_w = escape_image_dims.x;
-    R.escape_image_h = escape_image_dims.y;
-    cout << "Loaded escape_image " << loaded
-         << " Dims: " << R.escape_image_w << " " << R.escape_image_h << endl;
-    R.image_loaded = true;
-  } else {
+  if (!load_escape_image(escape_file1) && !load_escape_image(escape_file2)) {
     cout << "missing escape_image.jpg[png] for fractal escape coloring" << endl;
     R.color_algo = ColoringAlgo::MULTICYCLE;
     R.image_loaded = false;

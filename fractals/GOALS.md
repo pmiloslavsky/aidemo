@@ -484,3 +484,15 @@ before moving on.
 
 ### M10+: App changes
 _TBD. To be discussed._
+
+## Fixes after v1.0
+
+- **Crash when pressing `n` quickly with USE_IMAGE coloring (interior or outside).**
+  Reported 2026-09-29 with a WER dump (`%LOCALAPPDATA%\CrashDumps`). Access violation in
+  `sf::Image::getPixel` (`fractals.exe+0x203138` in v1.0-era builds): the render threads
+  read `NSR.escape_image` per pixel while the `n` handler replaced it on the main thread,
+  freeing the old pixel buffer (and updating the width/height separately). Reproduced
+  with the old exe (crash within 80 presses, same offset). Fix: `EscapeImage` is an
+  immutable object behind a `shared_ptr`, swapped under a mutex; each render thread takes
+  a snapshot per slice; pixel indexes are clamped. Survives 3 x 150 fast presses.
+- `windows-relwithdebinfo` preset (optimized, with a PDB) for debugging crashes.
