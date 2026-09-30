@@ -2,6 +2,7 @@
 // (-DFRACTALS_CUDA=OFF or no nvcc found). Reports no GPU so the app always
 // takes the CPU thread path.
 #include "buddha_cuda_kernel.h"
+#include "deepzoom.h"
 
 #include <iostream>
 
@@ -20,5 +21,10 @@ int cuda_generate_buddhabrot_hits(
 
 int cuda_escape_time(const EscapeParams &, unsigned int, unsigned int, unsigned int,
                      std::vector<EscapeResult> &, const bool *) {
+  return 1;
+}
+
+int deep_render_gpu(const EscapeParams &, const deep::Reference &, unsigned int, unsigned int,
+                    unsigned int, unsigned int, std::vector<EscapeResult> &, const bool *) {
   return 1;
 }

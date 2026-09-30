@@ -28,6 +28,7 @@
 #include "buddha_cuda_kernel.h"
 #include "fractals.h"
 #include "runtime.h"
+#include "deepzoom.h"
 #include "tinycolormap.hpp"
 
 #include <nlohmann/json.hpp>
@@ -528,6 +529,7 @@ class SavedFractal {
 
   ReferenceFrame RF;
   ReferenceFrameInt RI;  // interior coloring
+  std::string center_x, center_y;  // exact view center (deep zoom); may be empty
   // but not NSR
 
   SavedFractal(float _thetaxy, double _zoom)
@@ -1203,6 +1205,9 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
         (FRAC[current_fractal].yMinMax[1] - FRAC[current_fractal].yMinMax[0]) /
         R.original_height;
 
+    deep::set_center(R.xstart + R.original_width / 2.0 * R.xdelta,
+                     R.ystart + R.original_height / 2.0 * R.ydelta);
+
     original_view_width = view_width;
     original_view_height = view_height;
     image = sf::Image{ sf::Vector2u(view_width, view_height), sf::Color(0, 0, 0) };
@@ -1243,6 +1248,8 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
     R.ydelta =
         (FRAC[current_fractal].yMinMax[1] - FRAC[current_fractal].yMinMax[0]) /
         R.original_height;
+    deep::set_center(R.xstart + R.original_width / 2.0 * R.xdelta,
+                     R.ystart + R.original_height / 2.0 * R.ydelta);
     R.current_height = R.original_height;
     R.current_width = R.original_width;
     R.show_selection = false;  // mouse click on menu is not a selection
@@ -1715,9 +1722,11 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
     const SupportedFractal &f = FRAC[current_fractal];
     const unsigned int iters = effective_iters(f);  // Mandelbrot/Julia
-    if (f.cuda_mode && cuda_detected && has_escape_kernel(f)) {
-      // The GPU computes the orbits of this thread's columns; the coloring
-      // below is the CPU's own, so the look is the same
+    const bool deep_mode = deepModeFor(f, xdelta);
+    bool use_gpu = f.cuda_mode && cuda_detected && has_escape_kernel(f);
+    for (int attempt = 0; attempt < 2 && (use_gpu || deep_mode); ++attempt) {
+      // The GPU (and/or deep zoom) computes the orbits of this thread's
+      // columns; the coloring below is the CPU's own, so the look is the same
       EscapeParams p{xstart, ystart, xdelta, ydelta,
                      f.current_power, f.current_zconst.real(), f.current_zconst.imag(),
                      f.current_escape_r, R.light_pos_r, R.light_pos_i,
@@ -1725,7 +1734,9 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
                      R.color_algo == ColoringAlgo::SHADOW_MAP ? 1 : 0};
       unsigned int h = (unsigned int)R.original_height;
       thread_local std::vector<EscapeResult> results;
-      int rc = cuda_escape_time(p, xs, xe, h, results, &p_reset[tix]);
+      int rc = deep_mode ? deep::render(p, (unsigned int)R.original_width, h, xs, xe, results,
+                                        &p_reset[tix], use_gpu)
+                         : cuda_escape_time(p, xs, xe, h, results, &p_reset[tix]);
       if (rc == CUDA_ESCAPE_RESET) {
         p_reset[tix] = false;
         return true;
@@ -1748,13 +1759,15 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
         stats[current_fractal].in_set += in_set;
         stats[current_fractal].escaped_set += escaped;
         stats[current_fractal].total += (unsigned long long)(xe - xs) * h;
-        gpu_rendered = true;
+        gpu_rendered = use_gpu;
         hitsums = (unsigned long long)(R.original_width * R.original_height);
         return false;
       }
       // Already logged; this thread and the others carry on with the CPU
+      // (deep zoom retries this slice on the CPU)
       cout << "CUDA failed, using CPU threads for the rest of this session" << endl;
       cuda_detected = false;
+      use_gpu = false;
     }
     gpu_rendered = false;
 
@@ -1866,6 +1879,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
     R.current_height = newzoom * R.original_height;
 
     R.displayed_zoom = newzoom;
+    syncViewFromDeep();  // zooming keeps the center
 
     cout << "zoom: " << R.displayed_zoom;
     cout << "  cdims: " << R.current_width << " " << R.current_height << " ";
@@ -1907,6 +1921,12 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
 
     R.ystart = ystart;
 
+    // The exact (deep zoom) center moves by the same offset; the doubles are
+    // refreshed from it so they stay as close as a double can
+    deep::move_center((xcenter - R.original_width / 2.0) * R.xdelta,
+                      (ycenter - R.original_height / 2.0) * R.ydelta);
+    syncViewFromDeep();
+
     cout << "pan: " << xcenter << " " << ycenter << " ";
     cout << "  cdims: " << R.current_width << " " << R.current_height;
     cout.precision(10);
@@ -1915,6 +1935,26 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
          << xstart + (R.original_width - 1) * xdelta;
     cout << "  y range: " << ystart << " -> "
          << ystart + (R.original_height - 1) * ydelta << fixed << endl;
+  }
+
+  // R.xstart/ystart from the exact center (they are its double view)
+  void syncViewFromDeep() {
+    R.xstart = deep::center_x() - R.original_width / 2.0 * R.xdelta;
+    R.ystart = deep::center_y() - R.original_height / 2.0 * R.ydelta;
+  }
+
+  // Deep zoom (perturbation, deepzoom.h) once doubles run out of digits;
+  // Mandelbrot and Julia with power 2 only. Logs when it switches.
+  bool deepModeFor(const SupportedFractal &f, double xdelta) {
+    if (!has_escape_kernel(f) || f.current_power != 2) return false;
+    deep::set_depth_hint(xdelta);
+    bool want = deep::wanted(xdelta);
+    if (deep_active.exchange(want) != want)
+      cout << (want ? "Precision: switched to deep zoom (perturbation)"
+                    : "Precision: back to double")
+           << ", pixel spacing " << std::scientific << std::setprecision(3) << xdelta
+           << std::defaultfloat << endl;
+    return want;
   }
 
   void zoomFractal(double newzoom) {
@@ -1976,6 +2016,7 @@ class FractalModel : public sf::Drawable, public sf::Transformable {
   unsigned int current_fractal;
   std::atomic<bool> cuda_detected;  // cleared by a render thread if CUDA fails
   std::atomic<bool> gpu_rendered{false};  // the last escape-time slice came from the GPU
+  std::atomic<bool> deep_active{false};   // rendering with deep zoom (perturbation)
   unsigned int view_width;
   unsigned int view_height;
   unsigned long long maxred = 0;
@@ -2249,6 +2290,7 @@ const int max_saved = 30;
 SavedFractal no_fractal{0, 1.0};
 int last_loaded_key_ix = -1;
 int key_count = 0;  // keys found the last time "Load Next Key" looked
+std::string loaded_key_name;  // file name (no extension) of the key last loaded
 int frac_ix = 0;
 int displayed_frac_ix = -1;
 vector<SavedFractal> savf(max_saved,
@@ -2268,6 +2310,8 @@ SavedFractal captureFractal(shared_ptr<FractalModel> p_model) {
   s.current_escape_r = f.current_escape_r;
   s.RF = R;
   s.RI = RI;
+  s.center_x = deep::center_x_str();
+  s.center_y = deep::center_y_str();
   return s;
 }
 
@@ -2290,6 +2334,12 @@ void applyFractal(shared_ptr<FractalModel> p_model, const SavedFractal &s) {
   R.ystart = r.ystart;
   R.displayed_zoom = r.displayed_zoom;
   R.requested_zoom = r.requested_zoom;
+  // The exact center: from the key's strings, else from x_start/y_start. The
+  // pan and zoom below keep it and refresh R.xstart/ystart from it.
+  const SupportedFractal &fr = FRAC[s.current_fractal];
+  if (s.center_x.empty() || !deep::set_center(s.center_x, s.center_y))
+    deep::set_center(R.xstart + (fr.xMinMax[1] - fr.xMinMax[0]) * R.displayed_zoom / 2.0,
+                     R.ystart + (fr.yMinMax[1] - fr.yMinMax[0]) * R.displayed_zoom / 2.0);
   R.color_algo = r.color_algo;
   R.color_cycle_size = r.color_cycle_size;
   R.palette = r.palette;
@@ -2356,7 +2406,9 @@ json keyToJson(const SavedFractal &s) {
   j["escape_radius"] = s.current_escape_r;
   j["random_sample"] = r.random_sample;
   j["auto_iterations"] = r.auto_iterations;
-  j["view"] = {{"x_start", r.xstart},
+  j["view"] = {{"center_x", s.center_x},  // exact; x_start/y_start are doubles
+               {"center_y", s.center_y},
+               {"x_start", r.xstart},
                {"y_start", r.ystart},
                {"zoom", r.displayed_zoom},
                {"requested_zoom", r.requested_zoom},
@@ -2438,6 +2490,8 @@ bool keyFromJson(const json &j, SavedFractal &s) {
   r.displayed_zoom = keyField(j, "view", "zoom", 1.0);
   r.requested_zoom = keyField(j, "view", "requested_zoom", r.displayed_zoom);
   r.theta = keyField(j, "view", "theta", 0.0f);
+  s.center_x = keyField(j, "view", "center_x", std::string{});
+  s.center_y = keyField(j, "view", "center_y", std::string{});
   r.color_algo = keyField(j, "coloring", "algo", ColoringAlgo::MULTICYCLE);
   r.color_cycle_size = keyField(j, "coloring", "cycle_size", 32);
   r.palette = keyField(j, "coloring", "palette", tinycolormap::ColormapType::UF16);
@@ -2556,6 +2610,7 @@ void signalLoadNextKey(shared_ptr<FractalModel> p_model,
     SavedFractal s = no_fractal;
     if (readKey(keys[last_loaded_key_ix], s)) {
       applyFractal(p_model, s);
+      loaded_key_name = keys[last_loaded_key_ix].stem().string();
       cout << "loaded: " << keys[last_loaded_key_ix].string() << endl;
       break;
     }
@@ -3040,11 +3095,32 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   zoom_string = out.str();
 
   current = pgui->get<tgui::Label>("boundary_label");
-  current->setText("View: x " + formatNumber(R.xstart) + " .. " +
-                   formatNumber(R.xstart + (R.original_width) * R.xdelta) + ", y " +
-                   formatNumber(R.ystart) + " .. " +
-                   formatNumber(R.ystart + (R.original_height) * R.ydelta) +
-                   ", zoom " + formatNumber(R.displayed_zoom));
+  {
+    std::string precision_text;
+    const SupportedFractal &fr = FRAC[p_model->current_fractal];
+    bool deep_capable = has_escape_kernel(fr) && fr.current_power == 2;
+    double scale = std::max({std::fabs(R.xstart), std::fabs(R.ystart), 1e-300});
+    if (deep_capable && p_model->deep_active) {
+      // Short enough to stay left of the color lists; keys keep the exact center
+      auto shorten = [](const std::string &v) { return v.size() > 24 ? v.substr(0, 23) + "..." : v; };
+      current->setText("View: zoom " + formatNumber(R.displayed_zoom) + ", center " +
+                       shorten(deep::center_x_str()) + ", " + shorten(deep::center_y_str()));
+      precision_text = "Precision: deep zoom (perturbation)";
+    } else {
+      std::string precision = "Precision: double";
+      if (!fr.probabalistic && R.xdelta < 1e-14 * scale)
+        precision += deep_capable ? "" : " - at its limit (deep zoom needs Mandelbrot or Julia, power 2)";
+      current->setText("View: x " + formatNumber(R.xstart) + " .. " +
+                       formatNumber(R.xstart + (R.original_width) * R.xdelta) + ", y " +
+                       formatNumber(R.ystart) + " .. " +
+                       formatNumber(R.ystart + (R.original_height) * R.ydelta) + ", zoom " +
+                       formatNumber(R.displayed_zoom));
+      precision_text = precision;
+    }
+    // The precision goes on the shorter Time/GPU row
+    auto time_row = pgui->get<tgui::Label>("secs_label");
+    time_row->setText(time_row->getText() + "      " + precision_text);
+  }
 
   {
     const SampleStats &st = p_model->stats[p_model->current_fractal];
@@ -3097,7 +3173,10 @@ void updateCurrentGuiElements(shared_ptr<tgui::Gui> &pgui,
   current = pgui->get<tgui::Label>("keys_label");
   current->setText(last_loaded_key_ix < 0 ? "Key files: " + to_string(key_count)
                                           : "Key file " + to_string(last_loaded_key_ix + 1) +
-                                                " of " + to_string(key_count));
+                                                " of " + to_string(key_count) + ":\n" +
+                                                (loaded_key_name.size() > 24
+                                                     ? loaded_key_name.substr(0, 23) + "..."
+                                                     : loaded_key_name));
 }
 
 void display_all_widgets(shared_ptr<tgui::Gui> &pgui, bool maybe) {
@@ -3233,7 +3312,10 @@ Fractal keys (JSON):
       "interior": { "algo": "SOLID", "palette": "UF16", "cycle_size": 256 }
     }
   fractal:    a name from the Fractal menu (e.g. Julia, Buddhabrot)
-  view:       x_start/y_start is the top-left corner in fractal coordinates;
+  view:       center_x/center_y (strings) are the exact view center; deep zooms need
+              more digits than a double has. Without them, x_start/y_start (the
+              top-left corner, as doubles) place the view.
+              x_start/y_start is the top-left corner in fractal coordinates;
               zoom 1 shows the fractal's full default range, smaller zooms in.
               When requested_zoom differs, the view zooms about its center.
   coloring:   algo MULTICYCLE, SMOOTH, USE_IMAGE or SHADOW_MAP; palette Parula,
@@ -3241,6 +3323,10 @@ Fractal keys (JSON):
               Cividis, Github, Cubehelix or UF16
   interior:   algo SOLID, MULTICYCLE, USE_IMAGE, TRIG, DIST or DIST2
   tools/make_fractal_movies.py animates a key into a GIF and MP4s.
+
+Deep zoom: past about zoom 1e-10, Mandelbrot and Julia (power 2) switch to
+perturbation (one high-precision reference orbit, pixels as small offsets from
+it) and zoom on to about 1e-150. The status line shows "Precision: deep zoom".
 
 While running: the Help menu lists the keys (c: CUDA on/off, s: screenshot,
 z: undo zoom, e: exit, ...). The mouse wheel zooms, the right button recenters

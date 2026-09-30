@@ -79,6 +79,22 @@ FetchContent_Declare(json
   SYSTEM)
 FetchContent_MakeAvailable(json)
 
+# Boost.Multiprecision in standalone mode (header-only, no other Boost) for the
+# deep-zoom reference orbit; only its headers are used
+FetchContent_Declare(boost_mp
+  GIT_REPOSITORY https://github.com/boostorg/multiprecision.git
+  GIT_TAG ${FRACTALS_BOOST_MP_GIT_TAG}
+  GIT_SHALLOW ON
+  SOURCE_SUBDIR do-not-add)
+FetchContent_MakeAvailable(boost_mp)
+# Standalone Boost.Multiprecision still needs Boost.Config (also header-only)
+FetchContent_Declare(boost_config
+  GIT_REPOSITORY https://github.com/boostorg/config.git
+  GIT_TAG ${FRACTALS_BOOST_MP_GIT_TAG}
+  GIT_SHALLOW ON
+  SOURCE_SUBDIR do-not-add)
+FetchContent_MakeAvailable(boost_config)
+
 # CMakeRC is a single CMake script; SOURCE_SUBDIR points at a folder without a
 # CMakeLists.txt so only the sources are downloaded (no tests get added).
 FetchContent_Declare(cmrc
@@ -104,11 +120,13 @@ cmrc_add_resource_library(fractals_assets
 # ---------------------------------------------------------------------------
 # The app
 # ---------------------------------------------------------------------------
-add_executable(fractals src/fractals_with_gui_cuda.cpp src/runtime.cpp)
+add_executable(fractals src/fractals_with_gui_cuda.cpp src/runtime.cpp src/deepzoom.cpp)
+target_include_directories(fractals SYSTEM PRIVATE ${boost_mp_SOURCE_DIR}/include ${boost_config_SOURCE_DIR}/include)
+target_compile_definitions(fractals PRIVATE BOOST_MP_STANDALONE)
 target_link_libraries(fractals PRIVATE fractals_assets nlohmann_json::nlohmann_json)
 
 if(FRACTALS_CUDA)
-  target_sources(fractals PRIVATE src/buddha_cuda_kernel.cu)
+  target_sources(fractals PRIVATE src/buddha_cuda_kernel.cu src/deepzoom_cuda.cu)
   # cudart comes from CMAKE_CUDA_RUNTIME_LIBRARY=Static; never link the driver
   # library (-lcuda), so the exe still starts on machines without an NVIDIA driver.
   # --fmad=false: no fused multiply-add, like the CPU build, so GPU and CPU images

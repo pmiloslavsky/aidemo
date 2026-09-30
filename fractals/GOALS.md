@@ -531,3 +531,21 @@ _TBD. To be discussed._
   sample at random: they plot orbits that stay inside, and the grid starts at the top edge
   where there are none, so the image stayed black. The Auto iterations checkbox is hidden
   where it doesn't apply (it overlapped the Buddhabrot "red, green, blue" label).
+
+### M10: Deep zoom (perturbation) ✅ (first version, 2026-09-30)
+- Past pixel spacing 1e-12 of the coordinates (~zoom 1e-10), Mandelbrot and Julia with
+  power 2 switch to perturbation: `src/deepzoom.{h,cpp}` (CPU) and `src/deepzoom_cuda.cu`
+  (GPU). A 512-bit reference orbit at the view center (Boost.Multiprecision, standalone,
+  header-only; Boost.Config too) and per-pixel offsets in double with Zhuoran rebasing. The
+  existing CPU coloring colors the results. Depth limit ~1e-150 (512-bit center).
+- Hooks only in existing code: `getImagePixels` hands off; reset, pan, zoom and key load
+  keep the exact center (`deep::set_center/move_center`, `syncViewFromDeep`). Keys store
+  `center_x`/`center_y` as decimal strings. Status row: "Precision: double" / "deep zoom
+  (perturbation)"; the log records each switch. `FRACTALS_DEEP=on/off` forces it (tests).
+- Checks: at 1e-20 double renders one flat color, deep renders full detail; deep vs double
+  where both work: 99.99% (full), 99.92% (1e-2), 98.8% (1e-6) of pixels equal, differences in
+  chaotic boundary pixels; deep CPU and GPU are byte-identical. A period-18 minibrot at
+  zoom 1.9e-20 (`tests/deep/`) renders black inside, with the real axis as a black line.
+- Not yet: other fractals/powers, BLA (iteration skipping; 1e-20 frames take 14-22 s),
+  floatexp beyond 1e-300.
+- The key-file label shows the loaded key's name.
