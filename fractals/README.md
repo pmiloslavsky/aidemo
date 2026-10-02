@@ -40,6 +40,26 @@ says which (`FractalsData/fractals.log`).
 saved keys, screenshots, themes, images for image coloring, and the log. If that folder
 isn't writable, it uses `%LOCALAPPDATA%\Fractals` or `~/.local/share/fractals` instead.
 
+## Release notes
+
+**[1.1](https://github.com/pmiloslavsky/aidemo/releases/tag/fractals-v1.1)**
+- Deep zoom: Mandelbrot/Julia switch to perturbation past ~1e-10, down to ~1e-150 (CPU and GPU)
+- Auto iterations: the limit grows as you zoom in
+- UI: number boxes show current values and apply on Enter; tooltips; clearer names
+- Buddhabrots sample at random by default
+- Fixes: typing in a box no longer fires hotkeys; clicks on widgets no longer zoom
+
+**[1.0.1](https://github.com/pmiloslavsky/aidemo/releases/tag/fractals-v1.0.1)**
+- Fix: crash when pressing `n` quickly with image coloring
+- Fix: reset races in the render threads
+- Fix: SMOOTH coloring left black pixels (Newton, Nova, small escape radius)
+
+**[1.0](https://github.com/pmiloslavsky/aidemo/releases/tag/fractals-v1.0)**
+- One self-contained executable for Windows and Linux, nothing to install
+- CUDA Mandelbrot and Julia (same image as the CPU, 1.8-3.5x faster), CUDA optional
+- JSON fractal keys, `FractalsData/` folder next to the exe
+- `--help`, `--windowed`, `--save-and-exit` and other options
+
 ## Controls
 
 | Input | Action |
