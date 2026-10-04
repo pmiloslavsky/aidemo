@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rough-In Plumbing Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+body{margin:0}
+/* Layout: drafting-table workbench — tool rail | elevation cutaway canvas | lesson + readings + inspector panel */
+:root{
+  --bg:#E7EAE8; --panel:#F7F8F6; --panel-2:#EEF1EF; --ink:#1B2528; --muted:#5A666A; --line:#C9D0CD;
+  --accent:#A9582A; --accent-soft:#F1DFD2; --accent-ink:#FFFFFF;
+  --sky:#D7E3E8; --room:#F4F3EF; --room-2:#ECEAE4; --framing:#D8C6A6; --framing-line:#A48A60;
+  --crawl:#CFCABE; --soil:#B9A88B; --soil-dot:#9A8767; --concrete:#B6BAB8; --grid:#1B252812;
+  --cold:#2C6BD3; --hot:#CF3B2A; --drain:#3D454B; --vent:#2F8550; --water:#4AA2EA; --pipe-edge:#11181B55;
+  --fixture:#FFFFFF; --fixture-line:#7B878B; --ok:#2B7A4B; --warn:#A86F06; --err:#B01F57;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121719; --panel:#1A2124; --panel-2:#20292C; --ink:#E3E9E8; --muted:#97A5A8; --line:#2E393C;
+  --accent:#DB8D57; --accent-soft:#3A2A1F; --accent-ink:#1A1310;
+  --sky:#17222B; --room:#1E2629; --room-2:#232C2F; --framing:#4A3E2E; --framing-line:#7C6849;
+  --crawl:#282724; --soil:#372F24; --soil-dot:#54473A; --concrete:#363B3C; --grid:#E3E9E80F;
+  --cold:#5A94F2; --hot:#F2705B; --drain:#A3ACB2; --vent:#5CC283; --water:#79BFF6; --pipe-edge:#00000088;
+  --fixture:#2C363A; --fixture-line:#8E9CA0; --ok:#4DB57C; --warn:#E3A93D; --err:#F2669A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121719; --panel:#1A2124; --panel-2:#20292C; --ink:#E3E9E8; --muted:#97A5A8; --line:#2E393C;
+  --accent:#DB8D57; --accent-soft:#3A2A1F; --accent-ink:#1A1310;
+  --sky:#17222B; --room:#1E2629; --room-2:#232C2F; --framing:#4A3E2E; --framing-line:#7C6849;
+  --crawl:#282724; --soil:#372F24; --soil-dot:#54473A; --concrete:#363B3C; --grid:#E3E9E80F;
+  --cold:#5A94F2; --hot:#F2705B; --drain:#A3ACB2; --vent:#5CC283; --water:#79BFF6; --pipe-edge:#00000088;
+  --fixture:#2C363A; --fixture-line:#8E9CA0; --ok:#4DB57C; --warn:#E3A93D; --err:#F2669A; color-scheme:dark}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1500px;margin:0 auto;padding-inline:16px;padding-block:12px 28px;display:flex;flex-direction:column;gap:12px}
+
+/* header */
+.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+.brand svg{width:38px;height:38px;flex:none}
+.brand h1{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1;margin:0;letter-spacing:.01em;text-wrap:balance}
+.brand p{margin:2px 0 0;font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+.seg{display:flex;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px #0000001f}
+.water-btn{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:700;font-family:var(--f-display);font-size:17px;letter-spacing:.03em;text-transform:uppercase}
+.water-btn .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.water-btn[aria-pressed="true"]{border-color:var(--cold);color:var(--cold)}
+.water-btn[aria-pressed="true"] .dot{background:var(--water);box-shadow:0 0 0 3px color-mix(in srgb,var(--water) 30%,transparent)}
+
+/* lesson strip */
+.strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.strip button{flex:none;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px 6px 8px;cursor:pointer;font-size:14px;color:var(--muted)}
+.strip button .n{font-family:var(--f-mono);font-size:12px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);color:var(--muted)}
+.strip button[aria-current="true"]{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+.strip button[aria-current="true"] .n{border-color:var(--accent);color:var(--accent)}
+.strip button.done .n{background:var(--ok);border-color:var(--ok);color:var(--panel)}
+
+/* work area */
+.work{display:grid;grid-template-columns:78px minmax(0,1fr) 350px;gap:12px;align-items:start}
+.tools{display:flex;flex-direction:column;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 8px)}
+.tool{display:flex;flex-direction:column;align-items:center;gap:2px;border:1px solid transparent;background:none;border-radius:7px;padding:7px 2px 5px;cursor:pointer;font-size:11.5px;font-weight:600;color:var(--muted)}
+.tool svg{width:22px;height:22px}
+.tool:hover{background:var(--panel-2);color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.tools hr{border:0;border-top:1px solid var(--line);margin:4px 2px;width:auto}
+.tool:disabled{opacity:.35;cursor:default}
+
+.stage{display:flex;flex-direction:column;gap:8px;min-width:0}
+.opts{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-height:48px}
+.opts .lbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{border:1px solid var(--line);background:var(--panel-2);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:var(--f-mono);font-size:13px;font-weight:500}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chip .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.opts .note{font-size:13.5px;color:var(--muted);flex:1 1 220px;min-width:0}
+.canvas-wrap{background:var(--sky);border:1px solid var(--line);border-radius:10px;overflow-x:auto;overflow-y:hidden;line-height:0}
+canvas{display:block;touch-action:none;cursor:crosshair}
+canvas.hand{cursor:pointer;touch-action:pan-x pan-y}
+.status{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;font-family:var(--f-mono);font-size:12px;color:var(--muted);min-height:18px}
+.status b{color:var(--ink);font-weight:500}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-family:var(--f-body);font-size:12.5px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{display:inline-block;width:18px;height:5px;border-radius:3px}
+
+/* side panel */
+.panel{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h2{font-family:var(--f-display);font-weight:700;font-size:23px;line-height:1.1;margin:2px 0 8px;text-wrap:balance}
+.card h3{font-family:var(--f-display);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;margin:0;color:var(--muted)}
+.kicker{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.card p{margin:0 0 8px;max-width:65ch}
+.card p:last-child{margin-bottom:0}
+.lesson-body{font-size:14.5px}
+.lesson-body strong{font-weight:700}
+.goals{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.goals li{display:grid;grid-template-columns:20px 1fr;gap:8px;align-items:start;font-size:14px}
+.goals .box{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--fixture-line);margin-top:2px;display:grid;place-items:center}
+.goals li.met .box{background:var(--ok);border-color:var(--ok)}
+.goals li.met .box::after{content:"";width:5px;height:9px;border:solid var(--panel);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.goals li.met span{color:var(--muted)}
+.row-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.btn{border:1px solid var(--line);background:var(--panel-2);border-radius:7px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:13.5px}
+.btn:hover{border-color:var(--fixture-line)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.hint{margin-top:10px;padding:10px 12px;background:var(--panel-2);border-radius:8px;font-size:13.5px;border-left:3px solid var(--accent)}
+.complete{margin-top:12px;padding:10px 12px;border-radius:8px;background:color-mix(in srgb,var(--ok) 14%,var(--panel));border:1px solid color-mix(in srgb,var(--ok) 45%,var(--panel));font-size:14px}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.fx-list{display:flex;flex-direction:column;gap:6px}
+.fx{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+.fx .nm{font-weight:700;font-size:14px}
+.fx .nm small{font-weight:400;color:var(--muted);margin-left:4px}
+.fx .rd{grid-column:1/-1;display:flex;gap:4px 12px;flex-wrap:wrap;font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.fx .rd .c{color:var(--cold)} .fx .rd .h{color:var(--hot)}
+.fx .rd .bad{color:var(--err);font-weight:600}
+.tog{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:2px 10px;font-size:12.5px;font-weight:700;cursor:pointer;align-self:start}
+.tog[aria-pressed="true"]{background:var(--water);border-color:var(--water);color:#0B2236}
+.pill{display:inline-block;padding:0 7px;border-radius:999px;font-family:var(--f-body);font-size:11.5px;font-weight:700;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.err{color:var(--err)} .pill.warn{color:var(--warn)}
+.issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.issues button{width:100%;text-align:left;display:grid;grid-template-columns:6px 1fr;gap:10px;border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:8px 10px 8px 0;cursor:pointer;overflow:hidden}
+.issues button[aria-pressed="true"]{border-color:var(--ink)}
+.issues .stripe{border-radius:0 3px 3px 0}
+.issues .err .stripe{background:var(--err)} .issues .warn .stripe{background:var(--warn)}
+.issues .t{display:block;font-weight:700;font-size:13.5px;line-height:1.3}
+.issues .d{display:block;font-size:13px;color:var(--muted);margin-top:2px;line-height:1.4}
+.issues .code{font-family:var(--f-mono);font-size:11px;color:var(--muted);margin-top:3px;display:block}
+.pass{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--ok);font-weight:600}
+.summary{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.slider{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.slider label{font-size:13px;color:var(--muted);display:flex;justify-content:space-between}
+.slider output{font-family:var(--f-mono);color:var(--ink)}
+.slider input{width:100%;accent-color:var(--accent)}
+.foot{font-size:12.5px;color:var(--muted);max-width:90ch}
+
+@media (max-width:1180px){
+  .work{grid-template-columns:70px minmax(0,1fr)}
+  .panel{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
+}
+@media (max-width:720px){
+  .work{grid-template-columns:minmax(0,1fr)}
+  .tools{flex-direction:row;overflow-x:auto;position:static}
+  .tool{min-width:60px}
+  .tools hr{border-top:0;border-left:1px solid var(--line);margin:2px 4px}
+  .panel{display:flex}
+  .brand h1{font-size:26px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="9" fill="var(--accent)"/><path d="M9 12h11a6 6 0 0 1 6 6v11" fill="none" stroke="var(--accent-ink)" stroke-width="5" stroke-linecap="round"/><path d="M26 29a4 4 0 0 1-8 0c0-3 4-7 4-7" fill="none" stroke="var(--accent-ink)" stroke-width="0" /><circle cx="26" cy="33" r="2.4" fill="var(--accent-ink)"/></svg>
+      <div><h1>Rough-In</h1><p>Plumbing lab · elevation cutaway</p></div>
+    </div>
+    <div class="seg" role="group" aria-label="Mode">
+      <button id="modeLessons" aria-pressed="true">Lessons</button>
+      <button id="modeSandbox" aria-pressed="false">Sandbox</button>
+    </div>
+    <button class="water-btn" id="waterBtn" aria-pressed="false"><span class="dot"></span><span id="waterTxt">Water off</span></button>
+  </header>
+
+  <nav class="strip" id="strip" aria-label="Lessons"></nav>
+
+  <div class="work">
+    <aside class="tools" id="tools" aria-label="Tools"></aside>
+    <section class="stage">
+      <div class="opts" id="opts"></div>
+      <div class="canvas-wrap" id="wrap"><canvas id="cv" aria-label="House cutaway with plumbing"></canvas></div>
+      <div class="status"><span id="statusL"></span><span id="statusR"></span></div>
+      <div class="legend">
+        <span><i style="background:var(--cold)"></i>Cold supply</span>
+        <span><i style="background:var(--hot)"></i>Hot supply</span>
+        <span><i style="background:var(--drain)"></i>Drain / waste</span>
+        <span><i style="background:var(--vent)"></i>Vent</span>
+        <span>1 square = 1 ft · copper type L supply · PVC DWV</span>
+      </div>
+    </section>
+    <aside class="panel">
+      <section class="card" id="lessonCard"></section>
+      <section class="card" id="fxCard"></section>
+      <section class="card" id="inspCard"></section>
+    </aside>
+  </div>
+  <p class="foot">Teaching values follow the 2021 International Residential Code (IRC) and standard hydraulics: 0.433 psi per foot of rise, Hazen-Williams friction (C = 140), and fitting losses as equivalent pipe length. Your local code and inspector have the final word.</p>
+</div>
+
+<script id="engine">
+/* ================= ENGINE ================= */
+const W=40,H=26,ROOF=3,F2=12,F1=21;
+const SYSTEMS=['cold','hot','drain','vent'];
+const SYS={cold:{label:'Cold',sizes:[0.5,0.75,1]},hot:{label:'Hot',sizes:[0.5,0.75,1]},drain:{label:'Drain',sizes:[1.25,1.5,2,3,4]},vent:{label:'Vent',sizes:[1.25,1.5,2,3]}};
+const ID={0.5:0.545,0.75:0.785,1:1.025};            // copper type L inside diameter, in
+const ELL={0.5:1,0.75:2,1:2.5}, TEE_BR={0.5:3,0.75:4,1:5}, TEE_RUN={0.5:1,0.75:1.5,1:2}; // equivalent length, ft
+const HW_C=140, PSI_FT=0.433, PRV_SET=60;
+const TRAP_ARM={1.25:5,1.5:6,2:8,3:12,4:16};          // IRC Table P3105.1
+const H_CAP={1.25:1,1.5:3,2:6,3:20,4:160}, V_CAP={1.25:2,1.5:4,2:10,3:48,4:240}; // DFU, IRC Table P3005.4.1
+const FX={
+  meter:{name:'Water meter',w:2,h:1,ports:[{sys:'cold',dx:2,dy:0}],fixed:true},
+  sewer:{name:'Building sewer',w:1,h:1,ports:[{sys:'drain',dx:1,dy:0}],fixed:true},
+  heater:{name:'Water heater',w:2,h:5,ports:[{sys:'hot',dx:0,dy:-1},{sys:'cold',dx:1,dy:-1}]},
+  lav:{name:'Lavatory',w:3,h:3,q:1.2,hotFrac:.45,pmin:8,dfu:1,trapMin:1.25,ports:[{sys:'hot',dx:0,dy:1},{sys:'drain',dx:1,dy:1},{sys:'cold',dx:2,dy:1}]},
+  kitchen:{name:'Kitchen sink',w:3,h:3,q:1.8,hotFrac:.5,pmin:8,dfu:2,trapMin:1.5,ports:[{sys:'hot',dx:0,dy:1},{sys:'drain',dx:1,dy:1},{sys:'cold',dx:2,dy:1}]},
+  toilet:{name:'Toilet',w:2,h:3,q:3.0,hotFrac:0,pmin:20,dfu:3,trapMin:3,integral:true,ports:[{sys:'cold',dx:0,dy:2},{sys:'drain',dx:1,dy:3}]},
+  shower:{name:'Shower',w:3,h:8,q:2.0,hotFrac:.6,pmin:20,dfu:2,trapMin:1.5,ports:[{sys:'hot',dx:0,dy:4},{sys:'drain',dx:1,dy:8},{sys:'cold',dx:2,dy:4}]},
+  tub:{name:'Bathtub',w:5,h:2,q:4.0,hotFrac:.6,pmin:20,dfu:2,trapMin:1.5,ports:[{sys:'hot',dx:0,dy:-1},{sys:'cold',dx:1,dy:-1},{sys:'drain',dx:0,dy:2}]},
+};
+const nid=(x,y)=>y*W+x, nx=n=>n%W, ny=n=>(n/W)|0, ek=(a,b)=>a<b?a+'_'+b:b+'_'+a;
+const SZ={0.5:'½',0.75:'¾',1:'1',1.25:'1¼',1.5:'1½',2:'2',3:'3',4:'4'};
+const sz=s=>SZ[s]+'″';
+const SL={0:'flat',0.125:'⅛',0.25:'¼',0.5:'½'};
+
+function newState(){return{fixtures:[],edges:{cold:new Map(),hot:new Map(),drain:new Map(),vent:new Map()},attrs:{cold:new Map(),hot:new Map(),drain:new Map(),vent:new Map()},open:new Set(),waterOn:false,staticPsi:60,supplyOn:true,drainOn:true,blocked:new Set(),blockRects:[]};}
+function block(S,x0,y0,x1,y1,kind){S.blockRects.push({x0,y0,x1,y1,kind:kind||'window'});for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)S.blocked.add(nid(x,y));}
+function addFx(S,o){S.fixtures.push({id:o.id,type:o.type,x:o.x,y:o.y,label:o.label||null});}
+function baseFx(S){addFx(S,{id:'meter',type:'meter',x:2,y:22});addFx(S,{id:'sewer',type:'sewer',x:0,y:24});}
+function addEdge(S,sys,a,b,size,slope){const k=ek(a,b),old=S.edges[sys].get(k);S.edges[sys].set(k,{a:Math.min(a,b),b:Math.max(a,b),size,slope:slope??(old?old.slope:0.25)});}
+function run(S,sys,size,pts,slope){for(let i=0;i<pts.length-1;i++){let[x,y]=pts[i];const[x2,y2]=pts[i+1];while(x!==x2||y!==y2){const xn=x!==x2?x+Math.sign(x2-x):x,yn=x!==x2?y:y+Math.sign(y2-y);addEdge(S,sys,nid(x,y),nid(xn,yn),size,slope);x=xn;y=yn;}}}
+function setAttr(S,sys,x,y,o){S.attrs[sys].set(nid(x,y),o);}
+function portNode(f,p){return nid(f.x+p.dx,f.y+p.dy);}
+function portOf(f,sys){const p=FX[f.type].ports.find(p=>p.sys===sys);return p?portNode(f,p):null;}
+function adjOf(S,sys){const m=new Map(),add=(a,b)=>{let l=m.get(a);if(!l)m.set(a,l=[]);l.push(b);};for(const e of S.edges[sys].values()){add(e.a,e.b);add(e.b,e.a);}return m;}
+function bfs(adj,src,blocked){const T={src,parent:new Map(),dist:new Map(),order:[]};if(src==null||!adj.has(src))return T;T.dist.set(src,0);T.order.push(src);for(let i=0;i<T.order.length;i++){const n=T.order[i];if(blocked&&blocked(n))continue;for(const m of adj.get(n)||[]){if(T.dist.has(m))continue;T.dist.set(m,T.dist.get(n)+1);T.parent.set(m,n);T.order.push(m);}}return T;}
+const hw=(q,d)=>q<=0?0:4.52*Math.pow(q,1.85)/(Math.pow(HW_C,1.85)*Math.pow(d,4.87)); // psi per ft
+const fxName=f=>f.label||FX[f.type].name;
+const COST={cold:{0.5:4,0.75:7,1:11},hot:{0.5:4,0.75:7,1:11},drain:{1.25:2,1.5:2.5,2:3.5,3:6,4:9},vent:{1.25:2,1.5:2.5,2:3.5,3:6}};
+const FIT={cold:3,hot:3,drain:5,vent:4},ACOST={open:25,closed:25,prv:120,xtank:60,trap:12,co:15};
+function costOf(S,adj){const c={pipe:0,fit:0,dev:0,ft:0};for(const sys of SYSTEMS){for(const e of S.edges[sys].values()){c.pipe+=COST[sys][e.size];c.ft++;}
+  for(const[n,l]of adj[sys]){const turn=l.length===2&&(l[0]-n)!==-(l[1]-n);if(l.length>=3||turn)c.fit+=FIT[sys];}
+  for(const[n,a]of S.attrs[sys]){if(!adj[sys].has(n))continue;if(a.v)c.dev+=ACOST[a.v];if(a.trap)c.dev+=ACOST.trap;if(a.co)c.dev+=ACOST.co;}}
+  c.total=Math.round(c.pipe+c.fit+c.dev);return c;}
+const RIM=f=>f.type==='toilet'?f.y+1:f.type==='shower'?f.y+FX.shower.h-1:f.y;
+
+function analyze(S){
+  const A={issues:[],fx:{},PC:new Map(),PH:new Map(),PSC:new Map(),PSH:new Map(),QC:new Map(),QH:new Map(),anim:[],leaks:[],spray:[],spills:[],ventTerm:[],badEdges:new Set(),drainDir:new Map(),maxVel:{cold:0,hot:0},vel:new Map(),hasMain:false,heaterValve:false,heaterFed:false,slopeErrors:0,ventedNodes:new Set()};
+  const adj={};SYSTEMS.forEach(s=>adj[s]=adjOf(S,s));A.adj=adj;A.cost=costOf(S,adj);
+  const issue=(sev,cat,title,detail,code,node)=>A.issues.push({sev,cat,title,detail,code,node});
+  const one=t=>S.fixtures.find(f=>f.type===t);
+  const meter=one('meter'),sewer=one('sewer'),heater=one('heater');
+  const portIdx={cold:new Map(),hot:new Map(),drain:new Map(),vent:new Map()};
+  for(const f of S.fixtures)FX[f.type].ports.forEach(p=>portIdx[p.sys].set(portNode(f,p),f));
+  for(const f of S.fixtures)A.fx[f.id]={f,def:FX[f.type],coldConn:false,hotConn:false,cold:{P:null,PS:null,Q:0},hot:{P:null,PS:null,Q:0},totalQ:0,drain:null,running:false};
+  const att=(sys,n)=>S.attrs[sys].get(n);
+
+  /* ---------- supply ---------- */
+  const src=meter?portOf(meter,'cold'):null;
+  const closedB=sys=>n=>att(sys,n)?.v==='closed';
+  const TCall=bfs(adj.cold,src,null),TC=bfs(adj.cold,src,closedB('cold'));
+  const hin=heater?portOf(heater,'cold'):null,hout=heater?portOf(heater,'hot'):null;
+  A.heaterFed=hin!=null&&TCall.dist.has(hin);
+  const heaterLive=hin!=null&&TC.dist.has(hin)&&att('cold',hin)?.v!=='closed';
+  const THall=bfs(adj.hot,hout,null),TH=heaterLive?bfs(adj.hot,hout,closedB('hot')):bfs(new Map(),null,null);
+  A.TC=TC;A.TH=TH;
+  for(const f of S.fixtures){const r=A.fx[f.id],pc=portOf(f,'cold'),ph=portOf(f,'hot');
+    if(r.def.q){r.coldConn=pc!=null&&TCall.dist.has(pc);r.hotConn=ph!=null&&A.heaterFed&&THall.dist.has(ph);}}
+  // leaks: pressurized open ends
+  if(S.supplyOn)for(const[sys,T]of[['cold',TC],['hot',TH]])for(const n of T.order){
+    const deg=adj[sys].get(n).length;
+    if(deg===1&&n!==T.src&&!portIdx[sys].has(n)&&att(sys,n)?.v!=='closed'&&att(sys,n)?.v!=='xtank'){
+      const m=adj[sys].get(n)[0],e=S.edges[sys].get(ek(n,m));A.leaks.push({sys,n,from:m,size:e.size});}}
+  function pressures(sys,T,P0,flows){
+    const P=new Map();if(T.src==null||!T.dist.has(T.src))return P;
+    P.set(T.src,P0);
+    for(const n of T.order){if(n===T.src)continue;const p=T.parent.get(n),e=S.edges[sys].get(ek(p,n)),d=ID[e.size],q=flows?(flows.get(n)||0):0;
+      let eq=1;const pp=T.parent.get(p),deg=adj[sys].get(p).length;
+      if(pp!==undefined){const turn=(n-p)!==(p-pp);if(turn)eq+=deg>=3?TEE_BR[e.size]:ELL[e.size];else if(deg>=3)eq+=TEE_RUN[e.size];}
+      let v=P.get(p)-hw(q,d)*eq-PSI_FT*(ny(p)-ny(n));
+      if(att(sys,n)?.v==='prv'&&v>PRV_SET)v=PRV_SET;
+      P.set(n,v);}
+    return P;}
+  function accumulate(T,nq){const q=new Map();for(let i=T.order.length-1;i>=0;i--){const n=T.order[i],v=(q.get(n)||0)+(nq.get(n)||0);q.set(n,v);const p=T.parent.get(n);if(p!==undefined)q.set(p,(q.get(p)||0)+v);}return q;}
+  // static
+  A.PSC=pressures('cold',TC,S.staticPsi,null);
+  A.PSH=pressures('hot',TH,heaterLive?(A.PSC.get(hin)??0):0,null);
+  // demands
+  const dem=[];
+  if(S.supplyOn&&S.waterOn){
+    for(const f of S.fixtures){const def=FX[f.type];if(!def.q||!S.open.has(f.id))continue;
+      const pc=portOf(f,'cold'),ph=portOf(f,'hot');
+      const cOK=pc!=null&&TC.dist.has(pc),hOK=ph!=null&&TH.dist.has(ph);
+      let qc=0,qh=0;if(cOK&&hOK){qc=def.q*(1-def.hotFrac);qh=def.q*def.hotFrac;}else if(cOK)qc=def.q;else if(hOK)qh=def.q;
+      if(qc)dem.push({sys:'cold',n:pc,rated:qc,pmin:def.pmin,fid:f.id,cur:qc});
+      if(qh)dem.push({sys:'hot',n:ph,rated:qh,pmin:def.pmin,fid:f.id,cur:qh});}
+    for(const L of A.leaks)dem.push({sys:L.sys,n:L.n,leak:L,d:ID[L.size],cur:4});
+  }
+  let PC=A.PSC,PH=A.PSH,QC=new Map(),QH=new Map();
+  const solve=()=>{const nC=new Map(),nH=new Map();let Qh=0;
+    for(const d of dem){const m=d.sys==='hot'?nH:nC;m.set(d.n,(m.get(d.n)||0)+d.cur);if(d.sys==='hot')Qh+=d.cur;}
+    if(heaterLive&&Qh>0)nC.set(hin,(nC.get(hin)||0)+Qh);
+    QC=accumulate(TC,nC);const Qt=QC.get(src)||0;
+    PC=pressures('cold',TC,S.staticPsi-0.04*Qt*Qt,QC);
+    QH=accumulate(TH,nH);
+    PH=pressures('hot',TH,heaterLive?(PC.get(hin)??0)-0.03*Qh*Qh:0,QH);};
+  if(dem.length){for(let it=0;it<48;it++){solve();for(const d of dem){const P=Math.max(0,(d.sys==='hot'?PH:PC).get(d.n)??0);
+      const t=d.leak?29.84*0.6*d.d*d.d*Math.sqrt(P):d.rated*Math.min(1,Math.sqrt(P/d.pmin));d.cur=0.55*d.cur+0.45*t;}}solve();}
+  A.PC=PC;A.PH=PH;A.QC=QC;A.QH=QH;
+  for(const d of dem){if(d.leak){if(d.cur>0.05)A.spray.push({...d.leak,q:d.cur});continue;}const r=A.fx[d.fid];r[d.sys].Q+=d.cur;r.totalQ+=d.cur;}
+  for(const f of S.fixtures){const r=A.fx[f.id],pc=portOf(f,'cold'),ph=portOf(f,'hot');if(!r.def.q)continue;
+    if(pc!=null&&TC.dist.has(pc)){r.cold.P=PC.get(pc);r.cold.PS=A.PSC.get(pc);}
+    if(ph!=null&&TH.dist.has(ph)){r.hot.P=PH.get(ph);r.hot.PS=A.PSH.get(ph);}}
+  for(const[sys,T,Q]of[['cold',TC,QC],['hot',TH,QH]])for(const n of T.order){const p=T.parent.get(n);if(p===undefined)continue;const q=Q.get(n)||0;if(q<=0.02)continue;
+    const e=S.edges[sys].get(ek(p,n)),v=0.4085*q/(ID[e.size]**2);A.vel.set(sys+ek(p,n),v);
+    if(v>A.maxVel[sys]){A.maxVel[sys]=v;A['maxVelNode_'+sys]=n;A['maxVelSize_'+sys]=e.size;}
+    A.anim.push({sys,a:p,b:n,v});}
+
+  if(S.supplyOn){
+    const anyCold=adj.cold.size>0;
+    for(const[n,a]of S.attrs.cold)if((a.v==='open'||a.v==='closed')&&TCall.dist.has(n)&&TCall.dist.get(n)<=5)A.hasMain=true;
+    if(anyCold&&meter&&!A.hasMain)issue('err','supply','No main shutoff valve','Put a full-port valve on the cold line within a few feet of the meter so the whole house can be shut off.','IRC P2903.9.1',src);
+    if(A.heaterFed){let n=hin;for(let i=0;i<=4&&n!==undefined;i++){const a=att('cold',n);if(a&&(a.v==='open'||a.v==='closed')){A.heaterValve=true;break;}n=TCall.parent.get(n);}
+      if(!A.heaterValve)issue('err','supply','No shutoff on the heater inlet','The water heater needs its own valve on the cold supply, close to the tank, so it can be serviced without shutting off the house.','IRC P2903.9.2',hin);}
+    const prvs=[...S.attrs.cold].filter(([n,a])=>a.v==='prv'&&TCall.dist.has(n));
+    if(prvs.length){A.hasPRV=true;let mainD=null;for(const[n,a]of S.attrs.cold)if((a.v==='open'||a.v==='closed')&&TCall.dist.has(n)&&TCall.dist.get(n)<=5)mainD=Math.min(mainD??99,TCall.dist.get(n));
+      A.prvAfterMain=mainD!=null&&prvs.every(([n])=>TCall.dist.get(n)>mainD);
+      if(!A.prvAfterMain)issue('warn','supply','PRV is ahead of the main shutoff','Put the shutoff valve first, then the PRV, so the PRV can be serviced without pulling the meter.','',prvs[0][0]);
+      if(heater&&A.heaterFed){let n=hin;while(n!==undefined){if(att('cold',n)?.v==='xtank'){A.xtank=true;break;}n=TCall.parent.get(n);}
+        if(!A.xtank)issue('err','supply','No thermal expansion tank','The PRV makes this a closed system. Heated water expands with nowhere to go, pressure spikes and the relief valve weeps. Add an expansion tank on the heater’s cold feed.','IRC P2903.4',hin);}}
+    let maxS=0,maxN=null;for(const f of S.fixtures){const r=A.fx[f.id];for(const s of['cold','hot'])if(r[s].PS!=null&&r[s].PS>maxS){maxS=r[s].PS;maxN=portOf(f,s);}}
+    if(maxS>80)issue('err','supply','Static pressure over 80 psi',`Fixtures see ${maxS.toFixed(0)} psi with nothing running. Install a pressure-reducing valve (PRV) after the main shutoff.`,'IRC P2903.3.1',maxN);
+    if(S.staticPsi<40&&anyCold)issue('warn','supply','Street pressure under 40 psi','Low service pressure leaves little margin for height and friction. Use larger pipe, or the utility may need to raise it.','IRC P2903.1',src);
+    for(const L of A.leaks)issue('err','supply','Open pipe end',`This ${L.sys} stub is uncapped. With the water on it sprays. Connect it to a fixture or close it off with a valve.`,'',L.n);
+    for(const f of S.fixtures){const r=A.fx[f.id];if(!r.def.q)continue;
+      if(!r.coldConn&&portOf(f,'cold')!=null&&!(r.def.hotFrac>0&&r.hotConn&&false))issue('warn','supply',`${fxName(f)}: no cold supply`,'Run a cold line from the house main to the blue port.','',portOf(f,'cold'));
+      if(r.def.hotFrac>0&&!r.hotConn&&heater)issue('warn','supply',`${fxName(f)}: no hot supply`,'Run a hot line from the water heater outlet to the red port.','',portOf(f,'hot'));}
+    if(heater&&adj.hot.size>0&&!A.heaterFed)issue('warn','supply','Water heater has no cold feed','The hot side only works once cold water reaches the heater inlet.','',hin);
+    for(const f of S.fixtures){const r=A.fx[f.id];if(!r.def.q||!S.open.has(f.id)||!S.waterOn)continue;
+      for(const s of['cold','hot'])if(r[s].P!=null&&r[s].Q>0.001&&r[s].P<r.def.pmin)issue('warn','supply',`Low ${s} pressure at ${fxName(f)}`,`${Math.max(0,r[s].P).toFixed(1)} psi at the valve; this fixture needs ${r.def.pmin} psi for full flow. Shorten the run, cut fittings or upsize the pipe feeding it.`,'IRC P2903.1',portOf(f,s));}
+    if(A.maxVel.cold>8)issue('warn','supply','Cold water moving too fast',`${A.maxVel.cold.toFixed(1)} ft/s in a ${sz(A.maxVelSize_cold)} line. Above about 8 ft/s copper erodes and water hammer gets worse. Upsize this run.`,'Copper Development Assn.',A.maxVelNode_cold);
+    if(A.maxVel.hot>5)issue('warn','supply','Hot water moving too fast',`${A.maxVel.hot.toFixed(1)} ft/s in a ${sz(A.maxVelSize_hot)} hot line. Keep hot copper under about 5 ft/s to avoid erosion at fittings.`,'Copper Development Assn.',A.maxVelNode_hot);
+  }
+  for(const f of S.fixtures){const r=A.fx[f.id];if(!r.def.q&&!r.def.dfu)continue;
+    r.running=S.open.has(f.id)&&(S.supplyOn?(S.waterOn&&r.totalQ>0.05):true);}
+
+  /* ---------- drain, waste & vent ---------- */
+  if(S.drainOn){
+    const sN=sewer?portOf(sewer,'drain'):null;
+    const TD=bfs(adj.drain,sN,null);A.TD=TD;
+    for(const n of TD.order){const p=TD.parent.get(n);if(p!==undefined)A.drainDir.set(ek(n,p),[n,p]);}
+    const vcomp=new Map(),cTerm=[],cDrain=[],cTop=[];
+    for(const n0 of adj.vent.keys()){if(vcomp.has(n0))continue;const c=cTerm.length;cTerm.push(false);cDrain.push(false);cTop.push(n0);const q=[n0];vcomp.set(n0,c);
+      for(let i=0;i<q.length;i++){const n=q[i];if(ny(n)<=ROOF-1)cTerm[c]=true;if(adj.drain.has(n))cDrain[c]=true;if(ny(n)<ny(cTop[c]))cTop[c]=n;
+        for(const m of adj.vent.get(n))if(!vcomp.has(m)){vcomp.set(m,c);q.push(m);}}}
+    for(const n of adj.vent.keys())if(adj.vent.get(n).length===1&&ny(n)<=ROOF-1)A.ventTerm.push(n);
+    const dryVent=n=>vcomp.has(n)&&cTerm[vcomp.get(n)];
+    const ventC=n=>{if(dryVent(n))return vcomp.get(n);let m=n;while(true){const u=m-W;if(u<0||!S.edges.drain.has(ek(m,u)))return -1;m=u;if(dryVent(m))return vcomp.get(m);}};const vented=n=>ventC(n)>=0;const cRim=new Map();
+    cTerm.forEach((t,c)=>{if(!t&&cDrain[c])issue('err','dwv','Vent stops inside the building','A vent has to run outdoors, at least 6 in above the roof, or it cannot let air into the drains.','IRC P3103.1',cTop[c]);
+      if(!cDrain[c])issue('warn','dwv','Vent is not connected to a drain','This vent pipe does not tie into any drain, so it does nothing.','',cTop[c]);});
+    for(const n of adj.vent.keys()){if(adj.vent.get(n).length===1&&ny(n)>ROOF-1&&!adj.drain.has(n)&&cTerm[vcomp.get(n)])issue('err','dwv','Open vent end inside','Sewer gas will come out of this open vent stub. Cap it or connect it.','',n);}
+    const allDrainPorts=portIdx.drain;
+    for(const n of adj.drain.keys())if(adj.drain.get(n).length===1&&!allDrainPorts.has(n)&&att('drain',n)?.v!=='co'&&!att('drain',n)?.co)issue('err','dwv','Open drain end','Sewer gas escapes here, and water will pour out. Connect it, or cap it with a cleanout.','',n);
+    const dfu=new Map(),reported=new Set();
+    const once=(k,fn)=>{if(!reported.has(k)){reported.add(k);fn();}};
+    for(const f of S.fixtures){const def=FX[f.type];if(!def.dfu)continue;const r=A.fx[f.id],p=portOf(f,'drain');
+      const D=r.drain={connected:false,trap:false,vented:false,armLen:null,maxArm:null,armSize:null,under3:false,path:[],problem:null};
+      if(!adj.drain.has(p)){D.problem='Not connected';issue('err','dwv',`${fxName(f)}: drain not connected`,'Run a drain from the fixture outlet to the building drain.','',p);}
+      else if(!TD.dist.has(p)){D.problem='Dead end';issue('err','dwv',`${fxName(f)}: drain doesn't reach the sewer`,'Follow this drain downhill: it has to join the building drain that leaves for the sewer.','',p);}
+      else{
+        D.connected=true;const path=[];let n=p;while(n!==sN){path.push(n);n=TD.parent.get(n);}path.push(sN);D.path=path;
+        D.trap=def.integral?true:!!att('drain',p)?.trap;
+        if(!D.trap){D.problem='No trap';issue('err','dwv',`${fxName(f)}: no trap`,'Without a water seal, sewer gas comes straight up the drain into the room. Add a P-trap at the fixture outlet.','IRC P3201.1',p);}
+        if(path.slice(1,-1).some(m=>att('drain',m)?.trap))issue('err','dwv',`${fxName(f)}: double trapped`,'Water passes through two traps in a row. The air between them locks up the drain. Keep only the trap at the fixture.','IRC Ch. 32',path.slice(1).find(m=>att('drain',m)?.trap));
+        const e0=S.edges.drain.get(ek(path[0],path[1]));D.armSize=e0.size;
+        if(e0.size<def.trapMin&&!def.integral){D.problem=D.problem||'Undersized';issue('err','dwv',`${fxName(f)}: trap arm too small`,`A ${def.name.toLowerCase()} needs at least a ${sz(def.trapMin)} trap and arm; this one is ${sz(e0.size)}.`,'IRC Table P3201.7',p);}
+        let prev=0;
+        for(let i=0;i<path.length-1;i++){const a=path[i],b=path[i+1],k=ek(a,b),e=S.edges.drain.get(k);
+          dfu.set(k,(dfu.get(k)||0)+def.dfu);
+          if(e.size<prev)once('red'+k,()=>issue('err','dwv','Drain gets smaller downstream',`Pipe drops from ${sz(prev)} to ${sz(e.size)} in the direction of flow. Anything that fits the bigger pipe can jam here.`,'IRC P3002.3',b));
+          prev=Math.max(prev,e.size);
+          if(def.integral&&e.size<3){D.under3=true;once('wc'+k,()=>issue('err','dwv','Toilet drain under 3″',`A toilet's drain must be at least 3″ all the way to the sewer. This piece is ${sz(e.size)}.`,'IRC P3005.4',b));A.badEdges.add(k);}
+          if(ny(b)<ny(a)){A.badEdges.add(k);once('up'+k,()=>issue('err','dwv','Drain runs uphill','Water cannot flow up. Reroute so the drain only goes level-with-slope or down toward the sewer.','',b));}
+          if(ny(a)===ny(b)){const req=e.size>=3?0.125:0.25;if(e.slope<req){A.badEdges.add(k);once('sl'+k,()=>{A.slopeErrors++;issue('err','dwv',e.slope===0?'Flat drain':'Not enough slope',`${SL[e.slope]==='flat'?'Dead level':SL[e.slope]+'″/ft'} on a ${sz(e.size)} line. It needs at least ${SL[req]}″/ft so the water carries solids along.`,'IRC P3005.3',a);});}}}
+        // venting
+        let len=0,at=-1,why=null;
+        for(let i=0;i<path.length;i++){const m=path[i];
+          if(vented(m)){if(i===0&&!def.integral)why='crown';else at=i;break;}
+          if(i===path.length-1)break;
+          if(!def.integral&&ny(path[i+1])>ny(m)){why=i===0?'strap':'drop';break;}
+          len++;}
+        D.maxArm=TRAP_ARM[e0.size];D.armLen=at>=0?len:null;
+        if(at>=0){A.ventedNodes.add(path[at]);const c=ventC(path[at]);cRim.set(c,Math.min(cRim.get(c)??99,RIM(f)));}
+        if(why==='crown')issue('err','dwv',`${fxName(f)}: crown vent`,'The vent rises right off the trap outlet. It clogs and lets the trap siphon. Move the vent connection downstream along the trap arm.','IRC Ch. 31',p);
+        else if(why==='strap')issue('err','dwv',`${fxName(f)}: S-trap`,'The drain drops straight down out of the trap with no vent first. The falling water pulls the seal out behind it. Run the trap arm level to a vent before it turns down.','IRC Ch. 32',p);
+        else if(at<0)issue('err','dwv',`${fxName(f)}: trap not vented`,'Nothing lets air in behind the draining water, so it siphons the trap and sewer gas gets in. Connect a vent to the trap arm before it drops, and run the vent through the roof.','IRC Ch. 31',p);
+        else if(len>D.maxArm){issue('err','dwv',`${fxName(f)}: trap arm too long`,`${len} ft from the trap to the vent. A ${sz(e0.size)} arm allows ${D.maxArm} ft. Move the vent closer to the trap.`,'IRC Table P3105.1',path[Math.min(D.maxArm,path.length-1)]);}
+        D.vented=!why&&at>=0&&len<=D.maxArm;
+        if(!D.problem&&!D.vented)D.problem=why==='strap'?'S-trap':why==='crown'?'Crown vent':at<0?'Unvented':'Arm too long';
+      }
+      if(r.running){if(D.connected){for(let i=0;i<D.path.length-1;i++)A.anim.push({sys:'drain',a:D.path[i],b:D.path[i+1],v:3});}else A.spills.push({f,n:p});}
+    }
+    for(const[c,rim]of cRim){for(const e of S.edges.vent.values()){if(vcomp.get(e.a)!==c||ny(e.a)!==ny(e.b)||ny(e.a)<rim)continue;
+        issue('err','dwv','Vent runs sideways below the flood rim','A dry vent has to rise at least 6 in above the rim of the highest fixture it serves before it turns sideways. Below that, a clogged drain backs up into the vent and plugs it.','IRC P3104.5',e.a);A.badVent=(A.badVent||new Set()).add(ek(e.a,e.b));break;}}
+    for(const[k,v]of dfu){const e=S.edges.drain.get(k),horiz=ny(e.a)===ny(e.b),cap=(horiz?H_CAP:V_CAP)[e.size];
+      if(v>cap){A.badEdges.add(k);issue('err','dwv','Drain overloaded',`${v} fixture units on a ${sz(e.size)} ${horiz?'horizontal branch':'stack'}; that size carries ${cap} at most. Upsize it.`,'IRC Table P3005.4.1',e.b);}}
+    A.dfu=dfu;
+  }
+  const merged=new Map();for(const i of A.issues){const k=i.sev+i.title+i.detail;const m=merged.get(k);if(m){m.count++;}else merged.set(k,{...i,count:1});}
+  A.issues=[...merged.values()].map(i=>i.count>1?{...i,title:i.title+` (${i.count} places)`}:i);
+  A.errors=A.issues.filter(i=>i.sev==='err').length;A.warns=A.issues.filter(i=>i.sev==='warn').length;
+  A.dwvErrors=A.issues.filter(i=>i.sev==='err'&&i.cat==='dwv').length;
+  return A;
+}
+
+/* ---------------- lessons ---------------- */
+const allOpen=(S,ids)=>ids.every(i=>S.open.has(i));
+const LESSONS=[
+{key:'water-in',short:'Water in',kicker:'Supply',title:'Bring water into the house',supplyOn:true,drainOn:false,psi:60,
+ tools:['hand','pipe','valve','erase'],systems:['cold'],sizes:{cold:0.75},
+ intro:`<p>Water arrives from the street main at about <strong>60 psi</strong>, passes the <strong>meter</strong> in the crawlspace, and has to reach the kitchen sink on the first floor.</p><p>Every house needs a <strong>main shutoff valve</strong> right where the service enters. Then turn the water on. Any pipe end you leave open will spray.</p>`,
+ hint:`Pick <strong>Pipe</strong>, then drag from the blue ring just right of the meter, along the crawlspace, and up through the floor to the blue ring on the sink's right side. Then pick <strong>Valve</strong> and click the pipe one square from the meter.`,
+ setup(S){addFx(S,{id:'sink',type:'kitchen',x:27,y:18});},
+ goals:[['Run a cold line from the meter to the kitchen sink',(A)=>A.fx.sink.coldConn],
+        ['Put a main shutoff valve within 5 ft of the meter',(A)=>A.hasMain],
+        ['Turn the water on with no leaks',(A,S)=>S.waterOn&&A.leaks.length===0],
+        ['Open the sink and get at least 1.5 gpm',(A)=>A.fx.sink.totalQ>=1.5]]},
+{key:'pressure',short:'Pressure',kicker:'Supply sizing',title:'Height, friction and pipe size',supplyOn:true,drainOn:false,psi:45,
+ tools:['hand','pipe','valve','erase'],systems:['cold'],sizes:{cold:0.75},
+ intro:`<p>This upstairs bathroom was piped entirely in ½″. Street pressure here is only <strong>45 psi</strong>.</p><p>You lose <strong>0.433 psi for every foot</strong> water climbs, and friction rises steeply with flow: double the gpm in the same pipe and the loss roughly triples. Turn the water on and run the shower, tub and toilet together. Watch the shower pressure in Readings.</p>`,
+ hint:`Redraw the trunk in <strong>¾″</strong>: from the meter, along the crawlspace, up the riser and across to the tub branch. Drawing over an existing pipe changes its size. The short drops to each fixture can stay ½″.`,
+ setup(S){addFx(S,{id:'wc',type:'toilet',x:14,y:9});addFx(S,{id:'tub',type:'tub',x:18,y:10});addFx(S,{id:'shower',type:'shower',x:25,y:4});
+   run(S,'cold',.5,[[4,22],[30,22],[30,13],[14,13],[14,11]]);run(S,'cold',.5,[[19,13],[19,9]]);run(S,'cold',.5,[[27,13],[27,8]]);setAttr(S,'cold',5,22,{v:'open'});S.waterOn=false;},
+ goals:[['Run the shower, tub and toilet at the same time',(A,S)=>S.waterOn&&allOpen(S,['wc','tub','shower'])],
+        ['Shower holds at least 20 psi while all three run',(A,S)=>S.waterOn&&allOpen(S,['wc','tub','shower'])&&(A.fx.shower.cold.P??0)>=20],
+        ['Keep every cold pipe at or under 8 ft/s',(A,S)=>S.waterOn&&allOpen(S,['wc','tub','shower'])&&A.maxVel.cold<=8&&A.leaks.length===0]]},
+{key:'hot',short:'Hot water',kicker:'Supply',title:'Hook up the water heater',supplyOn:true,drainOn:false,psi:60,
+ tools:['hand','pipe','valve','erase'],systems:['cold','hot'],sizes:{cold:0.75,hot:0.75},
+ intro:`<p>Hot water is just cold water that has gone through the heater. The heater's <strong>cold inlet</strong> (right) needs a feed and its own <strong>shutoff valve</strong>. The <strong>hot outlet</strong> (left) supplies the fixtures.</p><p>By convention the hot side is on the <strong>left</strong> at every fixture. The ports are already set that way.</p>`,
+ hint:`Cold: start on the crawlspace trunk to the right of the heater, run up beside it and over to its blue inlet, then add a valve on that line. Hot: start at the heater's red outlet, go up a square, run right across the ceiling, then drop to the red ports on the lavatory and the shower.`,
+ setup(S){addFx(S,{id:'heater',type:'heater',x:6,y:16});addFx(S,{id:'lav',type:'lav',x:14,y:18});addFx(S,{id:'shower',type:'shower',x:20,y:13});
+   run(S,'cold',.75,[[4,22],[22,22]]);run(S,'cold',.5,[[22,22],[22,17]]);run(S,'cold',.5,[[16,22],[16,19]]);setAttr(S,'cold',5,22,{v:'open'});},
+ goals:[['Feed cold water to the heater inlet',(A)=>A.heaterFed],
+        ['Put a shutoff valve on the heater inlet',(A)=>A.heaterValve],
+        ['Run hot to the lavatory and the shower',(A)=>A.fx.lav.hotConn&&A.fx.shower.hotConn],
+        ['Water on, no leaks, shower open with 20+ psi hot',(A,S)=>S.waterOn&&A.leaks.length===0&&S.open.has('shower')&&(A.fx.shower.hot.P??0)>=20&&A.fx.shower.hot.Q>0]]},
+{key:'traps',short:'Traps & vents',kicker:'Drain, waste & vent',title:'Keep sewer gas out',supplyOn:false,drainOn:true,psi:60,
+ tools:['hand','pipe','trap','erase'],systems:['drain','vent'],sizes:{drain:1.5,vent:1.5},
+ intro:`<p>Every fixture needs a <strong>trap</strong>: a U-bend that holds a plug of water to block sewer gas. A trap needs a <strong>vent</strong> too. Without one, water rushing down the drain siphons the seal right out.</p><p>The vent has to join the <strong>trap arm</strong> before it turns down, within a set distance of the trap. For a 1½″ arm that's <strong>6 ft</strong>. The vent then runs up and out through the roof.</p>`,
+ hint:`Pick <strong>Trap</strong> and click the lavatory's drain port. The stack is 8 ft away, too far to vent from there. Pick <strong>Pipe → Vent</strong> and drag from the trap arm 2–4 squares right of the trap straight up past the roof line.`,
+ setup(S){addFx(S,{id:'lav',type:'lav',x:10,y:9});run(S,'drain',1.5,[[11,10],[19,10]]);run(S,'drain',2,[[19,10],[19,24]]);run(S,'drain',3,[[19,24],[1,24]]);},
+ goals:[['Put a P-trap at the lavatory outlet',(A)=>A.fx.lav.drain?.trap],
+        ['Vent the trap arm within 6 ft of the trap',(A)=>A.fx.lav.drain?.vented],
+        ['No open drain or vent ends',(A)=>!A.issues.some(i=>/Open (drain|vent) end|Vent stops/.test(i.title))],
+        ['Run the lavatory: the trap seal holds',(A,S)=>S.open.has('lav')&&A.fx.lav.drain?.vented&&A.fx.lav.drain?.trap]]},
+{key:'slope',short:'Slope & size',kicker:'Drain, waste & vent',title:'Make waste flow downhill',supplyOn:false,drainOn:true,psi:60,
+ tools:['hand','pipe','slope','erase'],systems:['drain','vent'],sizes:{drain:3,vent:1.5},
+ intro:`<p>Drains run on gravity. Horizontal pipe needs a steady fall: <strong>¼″ per foot</strong> up to 2½″ pipe, and <strong>⅛″ per foot</strong> for 3″ and larger. Flat pipe lets solids settle and clog.</p><p>Size is set by <strong>drainage fixture units (DFU)</strong> and by the fixture itself. A toilet needs 3″, and a shower needs at least a 1½″ trap. The rough-in below has three mistakes.</p>`,
+ hint:`Redraw the toilet's drop with <strong>Drain 3″</strong>. Redraw the shower's trap arm with <strong>1½″</strong>. Then pick <strong>Slope</strong>, choose ¼, and drag along the red flat section in the crawlspace.`,
+ setup(S){addFx(S,{id:'wc',type:'toilet',x:12,y:18});addFx(S,{id:'shower',type:'shower',x:20,y:13});
+   run(S,'drain',2,[[13,21],[13,23]]);run(S,'drain',1.25,[[21,21],[17,21]]);setAttr(S,'drain',21,21,{trap:true});
+   run(S,'vent',1.5,[[17,21],[17,2]]);run(S,'drain',2,[[17,21],[17,23],[13,23]]);run(S,'drain',3,[[13,23],[9,23]]);run(S,'drain',3,[[9,23],[6,23]],0);run(S,'drain',3,[[6,23],[5,23],[5,24],[1,24]]);
+   run(S,'vent',2,[[10,23],[10,2]]);},
+ goals:[['Toilet drains through 3″ pipe all the way',(A)=>A.fx.wc.drain?.connected&&!A.fx.wc.drain.under3],
+        ['Shower trap arm is at least 1½″',(A)=>(A.fx.shower.drain?.armSize??0)>=1.5],
+        ['Every horizontal drain has code slope',(A)=>A.slopeErrors===0&&A.fx.wc.drain?.connected],
+        ['Run both fixtures with zero drainage errors',(A,S)=>allOpen(S,['wc','shower'])&&A.dwvErrors===0]]},
+{key:'full',short:'Full rough-in',kicker:'Final exam',title:'Rough in a whole house',supplyOn:true,drainOn:true,psi:60,
+ tools:['hand','pipe','valve','trap','cleanout','slope','erase'],systems:['cold','hot','drain','vent'],sizes:{cold:0.75,hot:0.75,drain:2,vent:1.5},
+ intro:`<p>Everything at once: an upstairs bath with toilet, lavatory and shower, plus a first-floor kitchen and water heater. Supply every fixture, trap and vent every drain, and pass inspection.</p><p>Then run the <strong>peak test</strong>: open everything and make sure every fixture still gets its minimum pressure.</p>`,
+ hint:`A common layout: one 3″ stack beside the toilet that continues up through the roof as the stack vent. Tie the lavatory arm into the stack above the toilet, and give the shower and kitchen their own vents. For supply, run a ¾″ trunk with ¾″ risers and ½″ drops to each fixture. In Sandbox, <strong>Load sample house</strong> shows one solution.`,
+ setup(S){fullHouseFx(S);},
+ goals:[['Supply cold and hot to every fixture',(A,S)=>A.heaterFed&&S.fixtures.every(f=>{const r=A.fx[f.id];return!r.def.q||(r.coldConn&&(!r.def.hotFrac||r.hotConn));})],
+        ['Trap, vent and connect every drain',(A,S)=>S.fixtures.every(f=>{const r=A.fx[f.id];return!r.def.dfu||(r.drain?.connected&&r.drain.trap&&r.drain.vented);})],
+        ['Pass inspection: zero errors',(A,S)=>A.errors===0&&A.adj.cold.size>0&&A.adj.drain.size>0],
+        ['Peak test: everything open, every fixture at its minimum pressure',(A,S)=>S.waterOn&&S.fixtures.every(f=>{const r=A.fx[f.id];if(!r.def.q)return true;if(!S.open.has(f.id))return false;return(r.cold.P??-1)>=r.def.pmin&&(!r.def.hotFrac||(r.hot.P??-1)>=r.def.pmin);})]]},
+{key:'prv',short:'High pressure',kicker:'Supply · advanced',title:'Tame a 110 psi street',supplyOn:true,drainOn:true,psi:110,
+ tools:['hand','pipe','valve','prv','xtank','erase'],systems:['cold','hot'],sizes:{cold:0.75,hot:0.75},
+ intro:`<p>This house sits at the bottom of a hill and the street main runs <strong>110 psi</strong>. That wears out faucet cartridges, toilet fill valves and the water heater. Anything over <strong>80 psi</strong> needs a <strong>pressure-reducing valve</strong>.</p><p>A PRV has a catch: it acts like a check valve, so when the heater warms water the expansion has nowhere to go. A closed system needs a <strong>thermal expansion tank</strong>.</p>`,
+ hint:`Pick <strong>PRV</strong> and click the main a square or two downstream of the shutoff. Then pick <strong>Exp. tank</strong> and click the heater's cold feed beside the tank. Finish with the water on and every fixture open.`,
+ setup(S){fullHouseFx(S);buildSample(S);},
+ goals:[['Install a PRV downstream of the main shutoff',(A)=>A.hasPRV&&A.prvAfterMain],
+        ['Every fixture sees 80 psi or less at rest',(A)=>A.hasPRV&&!A.issues.some(i=>i.title.startsWith('Static pressure over'))],
+        ['Add a thermal expansion tank on the heater feed',(A)=>!!A.xtank],
+        ['Peak test: everything open, no leaks, every fixture at minimum',(A,S)=>peak(A,S)]]},
+{key:'service',short:'Service call',kicker:'Troubleshooting',title:'“No hot water upstairs”',supplyOn:true,drainOn:true,psi:60,
+ tools:['hand','pipe','valve','trap','cleanout','slope','erase'],systems:['cold','hot','drain','vent'],sizes:{cold:0.5,hot:0.75,drain:3,vent:1.5},
+ intro:`<p>The homeowner's complaints: no hot water at the upstairs bath, the kitchen smells like sewer, there's a wet spot in the crawlspace, and the shower drain gurgles.</p><p>Nobody tells you where the problems are. Turn the water on, run fixtures, read the gauges and find <strong>every</strong> fault. Some won't show up in the inspector until you test.</p>`,
+ hint:`Four faults to look for: a valve someone left closed, a fixture with no trap, a stub that sprays when pressurized, and a vent that stops short of the roof. The inspector also flags a flat section of building drain.`,
+ setup(S){fullHouseFx(S);buildSample(S);setAttr(S,'hot',23,13,{v:'closed'});S.attrs.drain.delete(nid(29,19));
+   for(let y=2;y<7;y++)S.edges.vent.delete(ek(nid(22,y),nid(22,y+1)));
+   for(let x=8;x<12;x++)S.edges.drain.get(ek(nid(x,24),nid(x+1,24))).slope=0;
+   run(S,'cold',.5,[[12,22],[12,19]]);},
+ goals:[['Get hot water to the upstairs shower',(A,S)=>S.waterOn&&S.open.has('shower')&&A.fx.shower.hot.Q>0.5],
+        ['Stop the sewer smell at the kitchen sink',(A)=>A.fx.kitchen.drain?.trap&&A.fx.kitchen.drain.vented],
+        ['Water on with no leaks',(A,S)=>S.waterOn&&A.leaks.length===0],
+        ['Inspector: zero errors, and the peak test passes',(A,S)=>A.errors===0&&peak(A,S)]]},
+{key:'window',short:'Vent puzzle',kicker:'Drain, waste & vent · advanced',title:'Vent around a window',supplyOn:false,drainOn:true,psi:60,
+ tools:['hand','pipe','trap','erase'],systems:['drain','vent'],sizes:{drain:2,vent:1.5},
+ intro:`<p>The owner wants a big window over the new vanity, so nothing can run through that wall. Two rules collide here.</p><p>The vent must join a 1½″ trap arm within <strong>6 ft</strong> of the trap. A dry vent also can't turn sideways until it's at least <strong>6 in above the flood rim</strong> of the fixture. Below that line a clog backs waste into the vent. The window blocks everything above the rim.</p>`,
+ hint:`Arm length limits depend on the <em>arm</em> size, not the fixture. A 2″ arm may run 8 ft. Redraw the arm in 2″ far enough to clear the window, vent straight up there, and watch the pipe downstream: drains can never get smaller.`,
+ setup(S){addFx(S,{id:'lav',type:'lav',x:10,y:9});block(S,11,4,18,8,'window');
+   run(S,'drain',1.5,[[11,10],[21,10]]);run(S,'drain',2,[[21,10],[21,24]]);run(S,'drain',3,[[21,24],[1,24]]);setAttr(S,'drain',11,10,{trap:true});},
+ goals:[['Vent the lavatory within the allowed arm length',(A)=>A.fx.lav.drain?.vented],
+        ['No sideways vent below the flood rim',(A)=>A.fx.lav.drain?.vented&&!A.issues.some(i=>i.title.startsWith('Vent runs sideways'))],
+        ['No drain gets smaller downstream',(A)=>A.fx.lav.drain?.vented&&!A.issues.some(i=>i.title.startsWith('Drain gets smaller'))],
+        ['Run the lavatory with zero drainage errors',(A,S)=>S.open.has('lav')&&A.dwvErrors===0]]},
+{key:'hilltop',short:'Hilltop',kicker:'Supply sizing · budget',title:'32 psi and a tight budget',supplyOn:true,drainOn:false,psi:32,budget:620,
+ tools:['hand','pipe','valve','erase'],systems:['cold'],sizes:{cold:1},
+ intro:`<p>A house at the top of the hill gets only <strong>32 psi</strong>. The bath is upstairs at the far end, and the toilet, tub and shower need <strong>20 psi</strong> each with all three running.</p><p>Pipe the whole thing in 1″ and the numbers work, but the owner's materials budget is <strong>$620</strong>. Big pipe only where the flow is big. Every foot and every fitting costs money.</p>`,
+ hint:`Flow is highest from the meter to the first branch, so that's where 1″ pays off. Past each tee the flow drops: step down to ¾″ for the run along the ceiling and ½″ for the short drops. Keep the route short and avoid extra bends.`,
+ setup(S){addFx(S,{id:'wc',type:'toilet',x:22,y:9});addFx(S,{id:'tub',type:'tub',x:26,y:10});addFx(S,{id:'shower',type:'shower',x:34,y:4});},
+ goals:[['Supply all three fixtures with a main shutoff',(A,S)=>['wc','tub','shower'].every(i=>A.fx[i].coldConn)&&A.hasMain],
+        ['All three open: each holds at least 20 psi',(A,S)=>S.waterOn&&allOpen(S,['wc','tub','shower'])&&['wc','tub','shower'].every(i=>(A.fx[i].cold.P??0)>=20)&&A.leaks.length===0],
+        ['No pipe over 8 ft/s',(A,S)=>S.waterOn&&allOpen(S,['wc','tub','shower'])&&A.maxVel.cold<=8],
+        ['Materials at or under $620',(A)=>A.cost.total<=620&&A.adj.cold.size>0]]},
+{key:'twobath',short:'Two-bath exam',kicker:'Master exam',title:'Two baths, one stack, one budget',supplyOn:true,drainOn:true,psi:55,budget:1550,
+ tools:['hand','pipe','valve','trap','cleanout','slope','erase'],systems:['cold','hot','drain','vent'],sizes:{cold:0.75,hot:0.75,drain:3,vent:1.5},
+ intro:`<p>Seven fixtures on 55 psi: a bath stacked over a bath, a tub upstairs, a kitchen and the water heater. Size the stack for the fixture units, keep every trap arm in range, and keep the supply quiet. No pipe over 8 ft/s with everything running.</p><p>Do it for <strong>$1550</strong> in materials or less. Stacking the baths so they share one drain and one vent is how pros keep the cost down.</p>`,
+ hint:`Run one 3″ stack between the two toilets and continue it through the roof as the stack vent. Fixtures that tie into the stack below a vented section are vented through it. The supply will need 1″ from the meter to the riser to stay under 8 ft/s at peak.`,
+ setup(S){twoBathFx(S);},
+ goals:[['Supply, trap, vent and connect all seven fixtures',(A,S)=>A.heaterFed&&S.fixtures.every(f=>{const r=A.fx[f.id];return(!r.def.q||(r.coldConn&&(!r.def.hotFrac||r.hotConn)))&&(!r.def.dfu||(r.drain?.connected&&r.drain.vented));})],
+        ['Inspector: zero errors',(A)=>A.errors===0&&A.adj.drain.size>0],
+        ['Peak test with no pipe over 8 ft/s (5 hot)',(A,S)=>peak(A,S)&&A.maxVel.cold<=8&&A.maxVel.hot<=5],
+        ['Materials at or under $1550',(A)=>A.cost.total<=1550&&A.adj.drain.size>0]]},
+];
+const peak=(A,S)=>S.waterOn&&A.leaks.length===0&&S.fixtures.every(f=>{const r=A.fx[f.id];if(!r.def.q)return true;if(!S.open.has(f.id))return false;return(r.cold.P??-1)>=r.def.pmin&&(!r.def.hotFrac||(r.hot.P??-1)>=r.def.pmin);});
+function twoBathFx(S){addFx(S,{id:'wc2',type:'toilet',x:14,y:9,label:'Upstairs toilet'});addFx(S,{id:'lav2',type:'lav',x:18,y:9,label:'Upstairs lav'});addFx(S,{id:'tub',type:'tub',x:24,y:10});
+  addFx(S,{id:'heater',type:'heater',x:6,y:16});addFx(S,{id:'wc1',type:'toilet',x:12,y:18,label:'Downstairs toilet'});addFx(S,{id:'lav1',type:'lav',x:19,y:18,label:'Downstairs lav'});addFx(S,{id:'kitchen',type:'kitchen',x:28,y:18});}
+function buildTwoBath(S,main){
+  run(S,'cold',main,[[4,22],[24,22]]);run(S,'cold',.75,[[24,22],[30,22]]);setAttr(S,'cold',5,22,{v:'open'});
+  run(S,'cold',.75,[[8,22],[8,15],[7,15]]);setAttr(S,'cold',8,16,{v:'open'});
+  run(S,'cold',.5,[[30,22],[30,19]]);run(S,'cold',.5,[[12,22],[12,20]]);run(S,'cold',.5,[[21,22],[21,19]]);
+  run(S,'cold',.75,[[24,22],[24,13]]);run(S,'cold',.75,[[14,13],[25,13]]);
+  run(S,'cold',.5,[[14,13],[14,11]]);run(S,'cold',.5,[[20,13],[20,10]]);run(S,'cold',.5,[[25,13],[25,9]]);
+  run(S,'hot',.75,[[6,15],[6,14],[28,14]]);run(S,'hot',.5,[[28,14],[28,19]]);run(S,'hot',.5,[[19,14],[19,19]]);run(S,'hot',.75,[[23,14],[23,13]]);run(S,'hot',.75,[[18,13],[24,13]]);
+  run(S,'hot',.5,[[18,13],[18,10]]);run(S,'hot',.5,[[24,13],[24,9]]);
+  setAttr(S,'drain',19,10,{trap:true});run(S,'drain',1.5,[[19,10],[16,10]]);run(S,'drain',2,[[16,10],[16,12]]);run(S,'drain',3,[[15,12],[16,12]]);
+  run(S,'drain',3,[[16,12],[16,24],[1,24]]);run(S,'vent',2,[[16,10],[16,2]]);
+  setAttr(S,'drain',24,12,{trap:true});run(S,'drain',1.5,[[24,12],[17,12]]);run(S,'drain',3,[[17,12],[16,12]]);run(S,'vent',1.5,[[22,12],[22,2]]);
+  run(S,'drain',3,[[13,21],[13,23],[16,23]]);
+  setAttr(S,'drain',20,19,{trap:true});run(S,'drain',1.5,[[20,19],[22,19]]);run(S,'vent',1.5,[[22,19],[22,12]]);run(S,'drain',2,[[22,19],[22,24],[17,24]]);run(S,'drain',3,[[17,24],[16,24]]);
+  setAttr(S,'drain',29,19,{trap:true});run(S,'drain',1.5,[[29,19],[31,19]]);run(S,'vent',1.5,[[31,19],[31,2]]);run(S,'drain',2,[[31,19],[31,24],[22,24]]);
+}
+function buildHill(S){run(S,'cold',1,[[4,22],[32,22],[32,13]]);setAttr(S,'cold',5,22,{v:'open'});run(S,'cold',.75,[[22,13],[36,13]]);
+  run(S,'cold',.5,[[22,13],[22,11]]);run(S,'cold',.5,[[27,13],[27,9]]);run(S,'cold',.5,[[36,13],[36,8]]);}
+
+function fullHouseFx(S){addFx(S,{id:'wc',type:'toilet',x:14,y:9});addFx(S,{id:'lav',type:'lav',x:18,y:9});addFx(S,{id:'shower',type:'shower',x:25,y:4});
+  addFx(S,{id:'heater',type:'heater',x:6,y:16});addFx(S,{id:'kitchen',type:'kitchen',x:28,y:18});}
+function buildSample(S){
+  run(S,'cold',.75,[[4,22],[30,22]]);setAttr(S,'cold',5,22,{v:'open'});
+  run(S,'cold',.75,[[8,22],[8,15],[7,15]]);setAttr(S,'cold',8,16,{v:'open'});
+  run(S,'cold',.5,[[30,22],[30,19]]);run(S,'cold',.75,[[24,22],[24,13]]);run(S,'cold',.75,[[14,13],[27,13]]);
+  run(S,'cold',.5,[[14,13],[14,11]]);run(S,'cold',.5,[[20,13],[20,10]]);run(S,'cold',.5,[[27,13],[27,8]]);
+  run(S,'hot',.75,[[6,15],[6,14],[28,14]]);run(S,'hot',.5,[[28,14],[28,19]]);run(S,'hot',.75,[[23,14],[23,13]]);run(S,'hot',.75,[[18,13],[25,13]]);
+  run(S,'hot',.5,[[18,13],[18,10]]);run(S,'hot',.5,[[25,13],[25,8]]);
+  setAttr(S,'drain',19,10,{trap:true});run(S,'drain',1.5,[[19,10],[16,10]]);run(S,'drain',2,[[16,10],[16,12]]);run(S,'drain',3,[[15,12],[16,12]]);
+  run(S,'drain',3,[[16,12],[16,24],[1,24]]);run(S,'vent',2,[[16,10],[16,2]]);
+  setAttr(S,'drain',26,12,{trap:true});run(S,'drain',2,[[26,12],[17,12]]);run(S,'drain',3,[[17,12],[16,12]]);run(S,'vent',1.5,[[22,12],[22,2]]);
+  setAttr(S,'drain',29,19,{trap:true});run(S,'drain',1.5,[[29,19],[31,19]]);run(S,'vent',1.5,[[31,19],[31,2]]);run(S,'drain',2,[[31,19],[31,24],[17,24]]);run(S,'drain',3,[[17,24],[16,24]]);
+}
+if(typeof module!=='undefined')module.exports={buildTwoBath,twoBathFx,buildHill,newState,baseFx,LESSONS,analyze,buildSample,fullHouseFx,run,setAttr,block,addFx,addEdge,nid,ek};
+</script>
+<script>
+/* ================= UI ================= */
+const $=s=>document.querySelector(s);
+const cv=$('#cv'),ctx=cv.getContext('2d'),wrap=$('#wrap');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let rebuildSandbox=true,S,A,mode='lessons',lessonIdx=0,tool='pipe',hover=null,sel=null,undo=[],C=22,showHint=false,flash='';
+const opt={sys:'cold',size:{cold:.75,hot:.75,drain:2,vent:1.5},slope:.25,fx:'lav',valveSys:'cold'};
+let done=new Set();try{done=new Set(JSON.parse(localStorage.getItem('roughin-done')||'[]'));}catch(e){}
+const saveDone=()=>{try{localStorage.setItem('roughin-done',JSON.stringify([...done]));}catch(e){}};
+const TOOLS={
+  hand:{label:'Operate',svg:'<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5V4a1.5 1.5 0 0 1 3 0v6m0-4.5a1.5 1.5 0 0 1 3 0V11m0-2.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.6-2.2L4.6 15a1.6 1.6 0 0 1 2.4-2l1 1"/>',note:'Click a fixture to open or close it, click a valve to turn it, or click the meter to switch the water.'},
+  pipe:{label:'Pipe',svg:'<path d="M3 7h9a5 5 0 0 1 5 5v9"/><path d="M3 4v6M14 21h6"/>',note:'Drag to lay pipe. Drawing over a pipe changes its size.'},
+  trap:{label:'Trap',svg:'<path d="M4 4v7a6 6 0 0 0 12 0V9h4"/><path d="M6 13a4 4 0 0 0 8 0" opacity=".5"/>',note:'Click a fixture’s drain outlet to add or remove a P-trap.'},
+  valve:{label:'Valve',svg:'<path d="M3 8l8 4-8 4zM21 8l-8 4 8 4z"/><path d="M12 12V4M8 4h8"/>',note:'Click a supply pipe to add or remove a ball valve. Turn it with Operate.'},
+  prv:{label:'PRV',svg:'<rect x="5" y="9" width="14" height="8" rx="2"/><path d="M2 13h3M19 13h3M12 9V4M9 4h6"/>',note:'Pressure-reducing valve: limits everything downstream to 60 psi.'},
+  xtank:{label:'Exp. tank',svg:'<rect x="7" y="3" width="10" height="13" rx="5"/><path d="M7 10h10M12 16v5M8 21h8"/>',note:'Click the heater’s cold feed to add a thermal expansion tank.'},
+  cleanout:{label:'Cleanout',svg:'<circle cx="12" cy="12" r="7"/><rect x="9" y="9" width="6" height="6"/>',note:'Click the end of a drain to cap it with a cleanout plug.'},
+  slope:{label:'Slope',svg:'<path d="M3 8l18 6"/><path d="M3 18h18M17 18v-3"/>',note:'Drag along a horizontal drain to set its fall per foot.'},
+  erase:{label:'Erase',svg:'<path d="M4 16l9-9 6 6-7 7H7z"/><path d="M12 20h8"/>',note:'Drag to remove pipe and fittings.'},
+  fixture:{label:'Fixture',svg:'<rect x="5" y="10" width="14" height="10" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0"/>',note:'Click to set a fixture down. The square you click is its bottom center.'},
+};
+const lesson=()=>mode==='lessons'?LESSONS[lessonIdx]:null;
+const allowedTools=()=>lesson()?lesson().tools:['hand','pipe','valve','prv','xtank','trap','cleanout','slope','erase','fixture'];
+const allowedSys=()=>lesson()?lesson().systems:['cold','hot','drain','vent'];
+
+function snapshot(){return JSON.stringify({f:S.fixtures,e:Object.fromEntries(SYSTEMS.map(s=>[s,[...S.edges[s].values()]])),a:Object.fromEntries(SYSTEMS.map(s=>[s,[...S.attrs[s]]])),o:[...S.open]});}
+function restore(j){const d=JSON.parse(j);S.fixtures=d.f;for(const s of SYSTEMS){S.edges[s]=new Map(d.e[s].map(e=>[ek(e.a,e.b),e]));S.attrs[s]=new Map(d.a[s]);}S.open=new Set(d.o);}
+function pushUndo(){undo.push(snapshot());if(undo.length>80)undo.shift();}
+function doUndo(){if(!undo.length)return;restore(undo.pop());recompute();}
+
+function loadLesson(i){mode='lessons';lessonIdx=i;const L=LESSONS[i];S=newState();S.supplyOn=L.supplyOn;S.drainOn=L.drainOn;S.staticPsi=L.psi;baseFx(S);L.setup(S);
+  Object.assign(opt.size,L.sizes);opt.sys=L.systems[0];tool='pipe';undo=[];sel=null;showHint=false;renderTools();recompute();}
+function loadSandbox(sample){mode='sandbox';rebuildSandbox=true;S=newState();baseFx(S);fullHouseFx(S);if(sample)buildSample(S);opt.sys='cold';tool=sample?'hand':'pipe';undo=[];sel=null;renderTools();recompute();}
+
+/* ---------- palette ---------- */
+let pal={};
+function readPal(){const cs=getComputedStyle(document.documentElement);for(const k of['sky','room','room-2','framing','framing-line','crawl','soil','soil-dot','concrete','grid','cold','hot','drain','vent','water','pipe-edge','fixture','fixture-line','ok','warn','err','ink','muted','accent','panel','line'])pal[k]=cs.getPropertyValue('--'+k).trim();}
+readPal();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',readPal);
+new MutationObserver(readPal).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class','style']});
+
+/* ---------- sizing ---------- */
+let dpr=1;
+function resize(){const w=wrap.clientWidth-2;C=Math.max(17,Math.min(30,Math.floor(w/W)));dpr=window.devicePixelRatio||1;
+  cv.style.width=C*W+'px';cv.style.height=C*H+'px';cv.width=C*W*dpr;cv.height=C*H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+new ResizeObserver(resize).observe(wrap);
+
+/* ---------- drawing ---------- */
+const OFF={cold:-0.2,hot:0.2,drain:0,vent:0};
+const pt=(n,sys)=>[(nx(n)+.5+OFF[sys])*C,(ny(n)+.5+OFF[sys])*C];
+const pw=(sys,s)=>sys==='drain'?C*(.1+s*.075):sys==='vent'?C*(.08+s*.06):C*(.1+s*.13);
+function font(sz,w=500,fam='mono'){ctx.font=`${w} ${sz}px ${fam==='mono'?'"JetBrains Mono",monospace':'"Barlow Condensed","Arial Narrow",sans-serif'}`;}
+function drawScene(){
+  const w=W*C,h=H*C;
+  ctx.fillStyle=pal.sky;ctx.fillRect(0,0,w,h);
+  // soil outside & below
+  ctx.fillStyle=pal.soil;ctx.fillRect(0,(F1+.55)*C,w,h);
+  // house interior
+  ctx.fillStyle=pal.room;ctx.fillRect(1*C,ROOF*C,(W-2)*C,(F1-ROOF)*C);
+  ctx.fillStyle=pal['room-2'];ctx.fillRect(1*C,ROOF*C,(W-2)*C,C*0.6);ctx.fillRect(1*C,(F2+1)*C,(W-2)*C,C*0.6);
+  for(const r of S.blockRects){const x=r.x0*C,y=r.y0*C,w=(r.x1-r.x0+1)*C,h=(r.y1-r.y0+1)*C;ctx.fillStyle=pal.sky;ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle=pal['framing-line'];ctx.lineWidth=C*.18;ctx.strokeRect(x,y,w,h);ctx.lineWidth=C*.08;ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w/2,y+h);ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.stroke();
+    ctx.strokeStyle=pal.panel;ctx.globalAlpha=.6;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x+C*.4,y+h*.4);ctx.lineTo(x+w*.3,y+C*.4);ctx.stroke();ctx.globalAlpha=1;
+    font(Math.max(9,C*.34),700);ctx.fillStyle=pal.muted;ctx.textBaseline='top';ctx.textBaseline='bottom';ctx.fillText('WINDOW · NO PIPE',x+C*.1,y-C*.15);}
+  // crawlspace
+  ctx.fillStyle=pal.crawl;ctx.fillRect(1*C,(F1+1)*C,(W-2)*C,2*C);
+  // soil dots
+  ctx.fillStyle=pal['soil-dot'];for(let i=0;i<260;i++){const x=((i*73)%W)*C+((i*37)%17)/17*C,y=(F1+.7+((i*29)%40)/40*(H-F1-.7))*C;if(y>(F1+1)*C&&y<(F1+3)*C&&x>C&&x<(W-1)*C)continue;ctx.fillRect(x,y,1.6,1.6);}
+  // foundation walls
+  ctx.fillStyle=pal.concrete;ctx.fillRect(.6*C,(F1)*C,.55*C,3.3*C);ctx.fillRect((W-1.15)*C,(F1)*C,.55*C,3.3*C);ctx.fillRect(.6*C,(F1+3)*C,(W-1.2)*C,.3*C);
+  // exterior walls
+  ctx.fillStyle=pal.framing;ctx.fillRect(.7*C,ROOF*C,.35*C,(F1-ROOF)*C);ctx.fillRect((W-1.05)*C,ROOF*C,.35*C,(F1-ROOF)*C);
+  // floors
+  for(const fy of[F2,F1]){ctx.fillStyle=pal.framing;ctx.fillRect(.7*C,fy*C,(W-1.4)*C,C);
+    ctx.strokeStyle=pal['framing-line'];ctx.lineWidth=1;ctx.strokeRect(.7*C+.5,fy*C+.5,(W-1.4)*C-1,C-1);
+    ctx.beginPath();for(let x=1.4;x<W-1;x+=1.33){ctx.moveTo(x*C,fy*C+C*.18);ctx.lineTo(x*C,fy*C+C*.95);}ctx.stroke();
+    ctx.fillStyle=pal['framing-line'];ctx.fillRect(.7*C,fy*C,(W-1.4)*C,C*.14);}
+  // roof
+  ctx.fillStyle=pal.ink;ctx.globalAlpha=.85;ctx.fillRect(.3*C,(ROOF-.25)*C,(W-.6)*C,.32*C);ctx.globalAlpha=1;
+  ctx.fillStyle=pal.framing;ctx.fillRect(.7*C,(ROOF+.07)*C,(W-1.4)*C,.35*C);
+  // grade line
+  ctx.strokeStyle=pal.ink;ctx.globalAlpha=.5;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,(F1+.55)*C);ctx.lineTo(.7*C,(F1+.55)*C);ctx.moveTo((W-.6)*C,(F1+.55)*C);ctx.lineTo(w,(F1+.55)*C);ctx.stroke();ctx.globalAlpha=1;
+  // grid
+  ctx.strokeStyle=pal.grid;ctx.lineWidth=1;ctx.beginPath();for(let x=0;x<=W;x++){ctx.moveTo(x*C+.5,0);ctx.lineTo(x*C+.5,h);}for(let y=0;y<=H;y++){ctx.moveTo(0,y*C+.5);ctx.lineTo(w,y*C+.5);}ctx.stroke();
+  // labels
+  font(Math.max(10,C*.5),700,'disp');ctx.fillStyle=pal.muted;ctx.textBaseline='top';
+  ctx.fillText('2ND FLOOR',1.4*C,(ROOF+.65)*C);ctx.fillText('1ST FLOOR',1.4*C,(F2+1.65)*C);ctx.fillText('CRAWLSPACE',33*C,(F1+2.05)*C);ctx.fillText('ROOF',1.4*C,.9*C);
+  font(Math.max(9,C*.38),500);ctx.textAlign='right';
+  const el=[[ROOF,"EL 18'-0\""],[F2+1,"EL 9'-0\""],[F1+1,"EL 0'-0\""]];
+  for(const[y,t]of el){ctx.fillStyle=pal.muted;ctx.fillText(t,(W-1.3)*C,(y-.55)*C);ctx.beginPath();ctx.strokeStyle=pal.muted;ctx.moveTo((W-1.25)*C,y*C);ctx.lineTo((W-.75)*C,y*C);ctx.stroke();}
+  ctx.textAlign='left';
+  // street main & sewer out (decorative)
+  ctx.lineCap='butt';ctx.strokeStyle=pal['pipe-edge'];ctx.lineWidth=pw('cold',.75)+2;ctx.beginPath();ctx.moveTo(0,(22.5-.2)*C);ctx.lineTo(2*C,(22.5-.2)*C);ctx.stroke();
+  ctx.strokeStyle=pal.cold;ctx.lineWidth=pw('cold',.75);ctx.stroke();
+  font(Math.max(9,C*.34),500);ctx.fillStyle=pal.ink;ctx.fillText('FROM MAIN',.15*C,(21.55)*C);
+  ctx.strokeStyle=pal['pipe-edge'];ctx.lineWidth=pw('drain',4)+2;ctx.beginPath();ctx.moveTo(0,24.5*C);ctx.lineTo(1*C,24.5*C);ctx.stroke();ctx.strokeStyle=pal.drain;ctx.lineWidth=pw('drain',4);ctx.stroke();
+  ctx.fillStyle=pal.ink;ctx.fillText('TO SEWER',.15*C,25.25*C);
+}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h);}
+function drawFixture(f,t){
+  const d=FX[f.type],x=f.x*C,y=f.y*C,w=d.w*C,h=d.h*C,r=A.fx[f.id];
+  ctx.lineWidth=1.4;ctx.strokeStyle=pal['fixture-line'];ctx.fillStyle=pal.fixture;
+  const run_=r&&r.running;
+  if(f.type==='meter'){rr(x+.1*C,y+.1*C,w-.2*C,h-.2*C,3);ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(x+w/2,y+h/2,C*.28,0,7);ctx.stroke();
+    ctx.fillStyle=S.waterOn?pal.water:pal.muted;ctx.beginPath();ctx.arc(x+w/2,y+h/2,C*.12,0,7);ctx.fill();}
+  else if(f.type==='sewer'){rr(x+.15*C,y+.15*C,w-.3*C,h-.3*C,3);ctx.fill();ctx.stroke();font(C*.36,600);ctx.fillStyle=pal.ink;ctx.fillText('CO',x+.2*C,y+.3*C);}
+  else if(f.type==='heater'){rr(x+.05*C,y+.2*C,w-.1*C,h-.2*C,C*.35);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x+.1*C,y+h-.7*C);ctx.lineTo(x+w-.1*C,y+h-.7*C);ctx.stroke();
+    ctx.fillStyle=pal.hot;ctx.globalAlpha=.8;ctx.fillRect(x+.4*C,y+h-.5*C,w-.8*C,.12*C);ctx.globalAlpha=1;
+    ctx.save();ctx.translate(x+w/2,y+h*.48);ctx.rotate(-Math.PI/2);font(C*.42,700,'disp');ctx.fillStyle=pal.muted;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('WATER HEATER · 50 GAL',0,0);ctx.restore();
+    ctx.fillStyle=pal.accent;ctx.fillRect(x+w-.05*C,y+.9*C,.3*C,.25*C);ctx.strokeStyle=pal.accent;ctx.beginPath();ctx.moveTo(x+w+.1*C,y+1.15*C);ctx.lineTo(x+w+.1*C,y+h-.4*C);ctx.stroke();}
+  else if(f.type==='lav'||f.type==='kitchen'){
+    const top=y+.75*C;rr(x+.1*C,top+.25*C,w-.2*C,h-.75*C-.25*C,2);ctx.fill();ctx.stroke();
+    ctx.beginPath();if(f.type==='kitchen'){ctx.moveTo(x+w/2,top+.4*C);ctx.lineTo(x+w/2,y+h-.15*C);}ctx.stroke();
+    ctx.fillStyle=pal.fixture;rr(x-.05*C,top,w+.1*C,.28*C,2);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x+.45*C,top+.28*C);ctx.quadraticCurveTo(x+w/2,top+.95*C,x+w-.45*C,top+.28*C);ctx.stroke();
+    ctx.strokeStyle=pal.ink;ctx.lineWidth=C*.1;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x+w/2+.35*C,top);ctx.lineTo(x+w/2+.35*C,top-.5*C);ctx.quadraticCurveTo(x+w/2+.35*C,top-.75*C,x+w/2+.05*C,top-.62*C);ctx.stroke();
+    if(run_)stream(x+w/2+.05*C,top-.55*C,top+.4*C,t);}
+  else if(f.type==='toilet'){
+    rr(x+.05*C,y+.15*C,.6*C,1.5*C,3);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x+.6*C,y+1.45*C);ctx.lineTo(x+w-.05*C,y+1.45*C);ctx.quadraticCurveTo(x+w,y+2.3*C,x+w*.6,y+2.45*C);ctx.lineTo(x+w*.62,y+h);ctx.lineTo(x+.35*C,y+h);ctx.lineTo(x+.4*C,y+2.2*C);ctx.lineTo(x+.6*C,y+2*C);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle=pal['fixture-line'];ctx.fillRect(x+.6*C,y+1.35*C,w-.65*C,.12*C);
+    if(run_){ctx.fillStyle=pal.water;ctx.globalAlpha=.55+.25*Math.sin(t/180);ctx.fillRect(x+.15*C,y+.5*C,.4*C,1.05*C);ctx.globalAlpha=1;}}
+  else if(f.type==='shower'){
+    ctx.fillStyle=pal['room-2'];ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);
+    ctx.strokeStyle=pal.grid;ctx.beginPath();for(let i=1;i<d.h*2;i++){ctx.moveTo(x,y+i*C/2);ctx.lineTo(x+w,y+i*C/2);}ctx.stroke();
+    ctx.strokeStyle=pal['fixture-line'];ctx.fillStyle=pal.fixture;rr(x-.05*C,y+h-.25*C,w+.1*C,.25*C,2);ctx.fill();ctx.stroke();
+    ctx.strokeStyle=pal.ink;ctx.lineWidth=C*.1;ctx.beginPath();ctx.moveTo(x+w/2,y+3.6*C);ctx.lineTo(x+w/2,y+1.3*C);ctx.lineTo(x+w-.6*C,y+1.3*C);ctx.stroke();
+    ctx.fillStyle=pal.ink;ctx.beginPath();ctx.moveTo(x+w-.85*C,y+1.4*C);ctx.lineTo(x+w-.35*C,y+1.4*C);ctx.lineTo(x+w-.6*C,y+1.15*C);ctx.fill();
+    ctx.beginPath();ctx.arc(x+w/2,y+4.5*C,C*.32,0,7);ctx.fillStyle=pal.fixture;ctx.fill();ctx.lineWidth=1.4;ctx.strokeStyle=pal['fixture-line'];ctx.stroke();
+    if(run_){ctx.strokeStyle=pal.water;ctx.lineWidth=1.6;ctx.setLineDash([C*.2,C*.25]);for(let i=-2;i<=2;i++){ctx.lineDashOffset=reduce?0:-t/40+i*5;ctx.beginPath();ctx.moveTo(x+w-.6*C+i*.1*C,y+1.45*C);ctx.lineTo(x+w-.6*C+i*.32*C,y+h-.3*C);ctx.stroke();}ctx.setLineDash([]);}}
+  else if(f.type==='tub'){rr(x,y+.1*C,w,h-.1*C,C*.3);ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(x+.2*C,y+.4*C);ctx.lineTo(x+w-.2*C,y+.4*C);ctx.stroke();
+    ctx.strokeStyle=pal.ink;ctx.lineWidth=C*.1;ctx.beginPath();ctx.moveTo(x+.5*C,y-.3*C);ctx.lineTo(x+.5*C,y-.05*C);ctx.lineTo(x+.85*C,y-.05*C);ctx.stroke();
+    if(run_){stream(x+.85*C,y,y+.6*C,t);ctx.fillStyle=pal.water;ctx.globalAlpha=.4;ctx.fillRect(x+.3*C,y+.6*C,w-.6*C,.5*C);ctx.globalAlpha=1;}}
+  // label
+  if(!d.fixed&&f.type!=='heater'){font(Math.max(9,C*.36),600);ctx.fillStyle=pal.muted;ctx.textBaseline='alphabetic';const lab=(f.label||d.name).toUpperCase();
+    const ly=f.type==='shower'?y-.25*C:f.type==='heater'?y+h+.0*C:f.type==='tub'?y-.55*C:y+.55*C;ctx.fillText(lab,f.type==='tub'?x+1.2*C:x,f.type==='heater'?y-1.2*C:ly);}
+}
+function stream(x,y1,y2,t){ctx.strokeStyle=pal.water;ctx.lineWidth=Math.max(2,C*.12);ctx.lineCap='round';ctx.setLineDash([C*.18,C*.14]);ctx.lineDashOffset=reduce?0:-t/30;ctx.beginPath();ctx.moveTo(x,y1);ctx.lineTo(x,y2);ctx.stroke();ctx.setLineDash([]);}
+function drawPorts(){
+  for(const f of S.fixtures)for(const p of FX[f.type].ports){if(f.type==='meter'||f.type==='sewer')continue;const n=portNode(f,p),[x,y]=pt(n,p.sys);const con=A.adj[p.sys].has(n);
+    ctx.beginPath();ctx.arc(x,y,C*.2,0,7);ctx.lineWidth=2;ctx.strokeStyle=pal[p.sys];ctx.fillStyle=con?pal[p.sys]:pal.panel;ctx.fill();ctx.stroke();}
+  const m=S.fixtures.find(f=>f.type==='meter'),s=S.fixtures.find(f=>f.type==='sewer');
+  for(const[f,sys]of[[m,'cold'],[s,'drain']]){if(!f)continue;const n=portOf(f,sys),[x,y]=pt(n,sys);if(A.adj[sys].has(n))continue;ctx.beginPath();ctx.arc(x,y,C*.2,0,7);ctx.lineWidth=2;ctx.strokeStyle=pal[sys];ctx.fillStyle=pal.panel;ctx.fill();ctx.stroke();}
+}
+function line(a,b){ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
+function drawPipes(t){
+  ctx.lineCap='round';ctx.lineJoin='round';
+  for(const sys of['drain','vent','cold','hot']){
+    const E=[...S.edges[sys].values()];if(!E.length)continue;
+    for(const e of E){ctx.strokeStyle=pal['pipe-edge'];ctx.lineWidth=pw(sys,e.size)+2.5;line(pt(e.a,sys),pt(e.b,sys));}
+    for(const e of E){ctx.strokeStyle=pal[sys];ctx.lineWidth=pw(sys,e.size);line(pt(e.a,sys),pt(e.b,sys));}
+    // fittings
+    const adj=A.adj[sys];
+    for(const[n,l]of adj){const turn=l.length===2&&(l[0]-n)!==-(l[1]-n);if(l.length>=3||turn){let mx=0;for(const m of l)mx=Math.max(mx,S.edges[sys].get(ek(n,m)).size);const[x,y]=pt(n,sys);ctx.fillStyle=pal['pipe-edge'];ctx.beginPath();ctx.arc(x,y,pw(sys,mx)*.72+1.2,0,7);ctx.fill();ctx.fillStyle=pal[sys];ctx.beginPath();ctx.arc(x,y,pw(sys,mx)*.72,0,7);ctx.fill();}}
+    ctx.strokeStyle='#FFFFFF';ctx.globalAlpha=.28;for(const e of E){const w=pw(sys,e.size);ctx.lineWidth=Math.max(1,w*.22);const a=pt(e.a,sys),b=pt(e.b,sys),o=w*.22;line([a[0]-o,a[1]-o],[b[0]-o,b[1]-o]);}ctx.globalAlpha=1;
+  }
+  // bad drain overlay & slope marks
+  for(const e of S.edges.drain.values()){const k=ek(e.a,e.b),a=pt(e.a,'drain'),b=pt(e.b,'drain'),horiz=ny(e.a)===ny(e.b);
+    if(A.badEdges.has(k)){ctx.strokeStyle=pal.err;ctx.lineWidth=pw('drain',e.size)+5;ctx.globalAlpha=.35+.2*Math.sin(t/200);line(a,b);ctx.globalAlpha=1;}
+    if(horiz&&(tool==='slope'||A.badEdges.has(k))){const dir=A.drainDir.get(k);font(Math.max(9,C*.38),600);ctx.fillStyle=A.badEdges.has(k)?pal.err:pal.ink;ctx.textAlign='center';ctx.textBaseline='bottom';
+      const mx=(a[0]+b[0])/2,my=a[1]-pw('drain',e.size)/2-2;ctx.fillText(SL[e.slope],mx,my);
+      if(dir){const s=Math.sign(nx(dir[1])-nx(dir[0]));ctx.beginPath();ctx.moveTo(mx+s*C*.22,a[1]+pw('drain',e.size)/2+C*.18);ctx.lineTo(mx-s*C*.08,a[1]+pw('drain',e.size)/2+C*.08);ctx.lineTo(mx-s*C*.08,a[1]+pw('drain',e.size)/2+C*.28);ctx.fill();}
+      ctx.textAlign='left';}}
+  for(const e of S.edges.vent.values()){if(!A.badVent||!A.badVent.has(ek(e.a,e.b)))continue;ctx.strokeStyle=pal.err;ctx.lineWidth=pw('vent',e.size)+5;ctx.globalAlpha=.35+.2*Math.sin(t/200);line(pt(e.a,'vent'),pt(e.b,'vent'));ctx.globalAlpha=1;}
+  // flow animation
+  for(const an of A.anim){const a=pt(an.a,an.sys),b=pt(an.b,an.sys);const e=S.edges[an.sys].get(ek(an.a,an.b));
+    ctx.strokeStyle=an.sys==='drain'?pal.water:'#FFFFFF';ctx.globalAlpha=an.sys==='drain'?.9:.75;ctx.lineWidth=Math.max(1.5,pw(an.sys,e.size)*.4);ctx.setLineDash([C*.18,C*.32]);
+    ctx.lineDashOffset=reduce?0:-(t/1000)*C*Math.min(10,1.2+an.v*1.1);line(a,b);ctx.setLineDash([]);ctx.globalAlpha=1;}
+  // attributes: traps, valves, prv, cleanouts
+  for(const[n,a]of S.attrs.drain){if(!A.adj.drain.has(n))continue;const[x,y]=pt(n,'drain');
+    if(a.trap){const fx=S.fixtures.find(f=>portOf(f,'drain')===n);const r=fx&&A.fx[fx.id];const bad=r&&r.drain&&r.drain.connected&&!r.drain.vented;
+      ctx.strokeStyle=pal['pipe-edge'];ctx.lineWidth=C*.34;ctx.beginPath();ctx.arc(x,y,C*.3,0,Math.PI);ctx.stroke();ctx.strokeStyle=pal.drain;ctx.lineWidth=C*.24;ctx.stroke();
+      ctx.strokeStyle=bad&&r.running?pal.err:pal.water;ctx.lineWidth=C*.12;ctx.beginPath();ctx.arc(x,y,C*.3,bad&&r.running?Math.PI*.35:Math.PI*.15,bad&&r.running?Math.PI*.65:Math.PI*.85);ctx.stroke();}
+    if(a.co){ctx.fillStyle=pal.panel;ctx.strokeStyle=pal.ink;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,C*.3,0,7);ctx.fill();ctx.stroke();ctx.fillStyle=pal.ink;ctx.fillRect(x-C*.12,y-C*.12,C*.24,C*.24);}}
+  for(const sys of['cold','hot'])for(const[n,a]of S.attrs[sys]){if(!A.adj[sys].has(n))continue;const[x,y]=pt(n,sys);const l=A.adj[sys].get(n);const horiz=l.some(m=>ny(m)===ny(n));
+    ctx.save();ctx.translate(x,y);if(!horiz)ctx.rotate(Math.PI/2);
+    if(a.v==='xtank'){ctx.restore();ctx.save();ctx.translate(x,y);ctx.strokeStyle=pal.ink;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(C*.55,0);ctx.stroke();rr(C*.55,-C*.9,C*.6,C*1.1,C*.3);ctx.fillStyle=pal.panel;ctx.fill();ctx.stroke();ctx.fillStyle=pal.cold;ctx.fillRect(C*.6,-C*.35,C*.5,C*.5);}
+    else if(a.v==='prv'){ctx.fillStyle=pal.accent;rr(-C*.42,-C*.3,C*.84,C*.6,4);ctx.fill();ctx.fillStyle=pal.panel;font(C*.3,700);ctx.textAlign='center';ctx.textBaseline='middle';if(!horiz)ctx.rotate(-Math.PI/2);ctx.fillText('PRV',0,1);}
+    else{const s=C*.34;ctx.fillStyle=pal.ink;ctx.beginPath();ctx.moveTo(-s,-s*.7);ctx.lineTo(0,0);ctx.lineTo(-s,s*.7);ctx.closePath();ctx.moveTo(s,-s*.7);ctx.lineTo(0,0);ctx.lineTo(s,s*.7);ctx.closePath();ctx.fill();
+      ctx.strokeStyle=a.v==='closed'?pal.err:pal.accent;ctx.lineWidth=C*.14;ctx.lineCap='round';ctx.beginPath();if(a.v==='closed'){ctx.moveTo(0,0);ctx.lineTo(0,-C*.62);}else{ctx.moveTo(-C*.45,-C*.42);ctx.lineTo(C*.45,-C*.42);}ctx.stroke();}
+    ctx.restore();}
+  // vent terminals: roof flashing
+  for(const n of A.ventTerm||[]){const[x]=pt(n,'vent');ctx.fillStyle=pal.ink;ctx.beginPath();ctx.moveTo(x-C*.45,(ROOF-.22)*C);ctx.lineTo(x+C*.45,(ROOF-.22)*C);ctx.lineTo(x+C*.2,(ROOF-.55)*C);ctx.lineTo(x-C*.2,(ROOF-.55)*C);ctx.fill();}
+}
+function drawEffects(t){
+  // leak spray
+  for(const L of A.spray){const[x,y]=pt(L.n,L.sys);const dx=Math.sign(nx(L.n)-nx(L.from)),dy=Math.sign(ny(L.n)-ny(L.from));ctx.fillStyle=pal.water;
+    for(let i=0;i<14;i++){const ph=((t/700)+i/14)%1,sp=(i%5-2)*.18;const px=x+(dx+sp*(dy?1:0))*ph*C*1.6+(dy===0?0:0),py=y+(dy+sp*(dx?1:0))*ph*C*1.6+ph*ph*C*1.2;ctx.globalAlpha=1-ph;ctx.beginPath();ctx.arc(px,py,C*.07+ph*C*.05,0,7);ctx.fill();}
+    ctx.globalAlpha=1;font(Math.max(9,C*.36),700);ctx.fillStyle=pal.err;ctx.fillText('LEAK',x+C*.35,y-C*.35);}
+  for(const sp of A.spills){const f=sp.f,d=FX[f.type];const fl=f.y+d.h;const x=(f.x+d.w/2)*C,y=fl*C;const g=.6+.4*Math.sin(t/300);
+    ctx.fillStyle=pal.water;ctx.globalAlpha=.55;ctx.beginPath();ctx.ellipse(x,y-C*.05,C*(1.2+g*.6),C*.16,0,0,7);ctx.fill();ctx.globalAlpha=1;
+    font(Math.max(9,C*.36),700);ctx.fillStyle=pal.err;ctx.fillText('FLOODING',x-C*.9,y-C*.3);}
+  // unvented running → gas
+  for(const f of S.fixtures){const r=A.fx[f.id];if(!r||!r.drain||!r.running)continue;if(r.drain.connected&&(!r.drain.trap||!r.drain.vented)){const n=portOf(f,'drain'),[x,y]=pt(n,'drain');
+    ctx.strokeStyle=pal.err;ctx.lineWidth=1.5;for(let i=0;i<3;i++){const ph=((t/1400)+i/3)%1;ctx.globalAlpha=1-ph;ctx.beginPath();ctx.arc(x+Math.sin(ph*6+i)*C*.25,y-C*.5-ph*C*1.4,C*(.1+ph*.15),0,7);ctx.stroke();}ctx.globalAlpha=1;
+    font(Math.max(9,C*.34),700);ctx.fillStyle=pal.err;ctx.fillText(!r.drain.trap?'SEWER GAS':'SEAL SIPHONED',x+C*.4,y-C*.9);}}
+}
+function frame(t){
+  if(!S){requestAnimationFrame(frame);return;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawScene();for(const f of S.fixtures)drawFixture(f,t);drawPipes(t);drawPorts();drawEffects(t);
+  if(sel!=null){const x=(nx(sel)+.5)*C,y=(ny(sel)+.5)*C;ctx.strokeStyle=pal.err;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,C*(.6+.15*Math.sin(t/180)),0,7);ctx.stroke();}
+  if(hover){ctx.strokeStyle=pal.accent;ctx.lineWidth=2;ctx.strokeRect(hover.x*C+1,hover.y*C+1,C-2,C-2);
+    if(tool==='fixture'){const d=FX[opt.fx],x0=hover.x-Math.floor(d.w/2),y0=hover.y-d.h+1;ctx.setLineDash([4,3]);ctx.strokeRect(x0*C,y0*C,d.w*C,d.h*C);ctx.setLineDash([]);}}
+  requestAnimationFrame(frame);
+}
+
+/* ---------- interaction ---------- */
+function cellAt(e){const r=cv.getBoundingClientRect();const x=Math.floor((e.clientX-r.left)/C),y=Math.floor((e.clientY-r.top)/C);return x>=0&&y>=0&&x<W&&y<H?{x,y}:null;}
+const fxAt=(x,y)=>S.fixtures.find(f=>{const d=FX[f.type];return x>=f.x&&x<f.x+d.w&&y>=f.y&&y<f.y+d.h;});
+let stroke=null;
+function stepTo(c,fn){let{x,y}=stroke.last;while(x!==c.x||y!==c.y){const ddx=c.x-x,ddy=c.y-y;let xn=x,yn=y;if(Math.abs(ddx)>=Math.abs(ddy))xn+=Math.sign(ddx);else yn+=Math.sign(ddy);if(fn(nid(x,y),nid(xn,yn),xn,yn)===false)break;x=xn;y=yn;}stroke.last={x,y};}
+function eraseCell(n){for(const s of SYSTEMS){for(const k of[...S.edges[s].keys()]){const e=S.edges[s].get(k);if(e.a===n||e.b===n)S.edges[s].delete(k);}S.attrs[s].delete(n);}}
+function setFlash(m){flash=m;renderStatus();clearTimeout(setFlash.t);setFlash.t=setTimeout(()=>{flash='';renderStatus();},2600);}
+cv.addEventListener('pointerdown',e=>{const c=cellAt(e);if(!c)return;const n=nid(c.x,c.y);
+  if(tool==='hand'){const f=fxAt(c.x,c.y);
+    for(const s of['cold','hot']){const a=S.attrs[s].get(n);if(a&&(a.v==='open'||a.v==='closed')&&A.adj[s].has(n)){a.v=a.v==='open'?'closed':'open';recompute();return;}}
+    if(f){if(f.type==='meter'){toggleWater();return;}if(FX[f.type].q||FX[f.type].dfu){S.open.has(f.id)?S.open.delete(f.id):S.open.add(f.id);recompute();}}return;}
+  if(tool==='pipe'||tool==='erase'||tool==='slope'){pushUndo();cv.setPointerCapture(e.pointerId);stroke={last:c,moved:false};
+    if(tool==='erase'){const f=fxAt(c.x,c.y);if(mode==='sandbox'&&f&&!FX[f.type].fixed){S.fixtures=S.fixtures.filter(g=>g!==f);S.open.delete(f.id);}eraseCell(n);recompute();}return;}
+  if(tool==='trap'||tool==='cleanout'){if(!A.adj.drain.has(n)){setFlash(tool==='trap'?'Traps go on a drain pipe. Run a drain to the fixture outlet first.':'Cleanouts go on a drain pipe end.');return;}
+    pushUndo();const a=S.attrs.drain.get(n)||{};if(tool==='trap')a.trap=!a.trap;else a.co=!a.co;if(!a.trap&&!a.co)S.attrs.drain.delete(n);else S.attrs.drain.set(n,a);recompute();return;}
+  if(tool==='xtank'){if(!A.adj.cold.has(n)){setFlash('Expansion tanks go on the cold water feeding the heater.');return;}
+    pushUndo();const a=S.attrs.cold.get(n);if(a&&a.v==='xtank')S.attrs.cold.delete(n);else S.attrs.cold.set(n,{v:'xtank'});recompute();return;}
+  if(tool==='valve'||tool==='prv'){const cands=tool==='prv'?['cold']:[opt.valveSys,opt.valveSys==='cold'?'hot':'cold'];const s=cands.find(s=>A.adj[s].has(n)&&allowedSys().includes(s));
+    if(!s){setFlash(tool==='prv'?'Put the PRV on the cold main, just after the shutoff.':'Valves go on a supply pipe.');return;}
+    pushUndo();const a=S.attrs[s].get(n);const want=tool==='prv'?'prv':'open';if(a&&(a.v===want||(want==='open'&&a.v==='closed')))S.attrs[s].delete(n);else S.attrs[s].set(n,{v:want});recompute();return;}
+  if(tool==='fixture'){const d=FX[opt.fx],x0=c.x-Math.floor(d.w/2),y0=c.y-d.h+1;
+    if(x0<1||x0+d.w>W-1||y0<ROOF+1||y0+d.h>F1){setFlash('That spot is outside the house. Fixtures sit on the 1st or 2nd floor.');return;}
+    for(let yy=y0;yy<y0+d.h;yy++)for(let xx=x0;xx<x0+d.w;xx++)if(fxAt(xx,yy)){setFlash('Something is already there.');return;}
+    const sitsOn=y0+d.h===F2||y0+d.h===F1||(opt.fx==='tub'&&(y0+d.h===F2||y0+d.h===F1));if(!sitsOn){setFlash('Set fixtures on a floor: click a square just above the floor framing.');return;}
+    pushUndo();let k=1;while(S.fixtures.some(f=>f.id===opt.fx+k))k++;addFx(S,{id:opt.fx+k,type:opt.fx,x:x0,y:y0});recompute();}
+});
+cv.addEventListener('pointermove',e=>{const c=cellAt(e);hover=c;renderStatus();if(!stroke||!c)return;
+  if(c.x===stroke.last.x&&c.y===stroke.last.y)return;stroke.moved=true;
+  if(tool==='pipe'){const sys=opt.sys,size=opt.size[sys];stepTo(c,(a,b)=>{if(S.blocked.has(b)){setFlash('That’s a window. Route the pipe around it.');return false;}addEdge(S,sys,a,b,size);});}
+  else if(tool==='erase')stepTo(c,(a,b)=>eraseCell(b));
+  else if(tool==='slope')stepTo(c,(a,b)=>{const e=S.edges.drain.get(ek(a,b));if(e&&ny(a)===ny(b))e.slope=opt.slope;});
+  recompute();});
+const endStroke=()=>{if(stroke&&tool==='slope'&&!stroke.moved){const n=nid(stroke.last.x,stroke.last.y);for(const d of[1,-1]){const e=S.edges.drain.get(ek(n,n+d));if(e)e.slope=opt.slope;}recompute();}
+  if(stroke&&tool==='pipe'&&!stroke.moved)undo.pop();stroke=null;};
+cv.addEventListener('pointerup',endStroke);cv.addEventListener('pointercancel',endStroke);
+cv.addEventListener('pointerleave',()=>{hover=null;renderStatus();});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();doUndo();}});
+function toggleWater(){S.waterOn=!S.waterOn;recompute();}
+$('#waterBtn').onclick=toggleWater;
+$('#modeLessons').onclick=()=>{if(mode!=='lessons')loadLesson(lessonIdx);};
+$('#modeSandbox').onclick=()=>{if(mode!=='sandbox')loadSandbox(false);};
+
+/* ---------- panels ---------- */
+function recompute(){A=analyze(S);if(sel!=null&&!A.issues.some(i=>i.node===sel))sel=null;renderPanels();}
+function renderTools(){
+  const al=allowedTools();
+  $('#tools').innerHTML=Object.entries(TOOLS).filter(([k])=>al.includes(k)).map(([k,t])=>`<button class="tool" data-tool="${k}" aria-pressed="${tool===k}" title="${t.note}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.svg}</svg>${t.label}</button>`).join('')+
+   `<hr><button class="tool" id="undoBtn" ${undo.length?'':'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>`;
+  cv.className=tool==='hand'?'hand':'';renderOpts();}
+$('#tools').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='undoBtn'){doUndo();return;}tool=b.dataset.tool;renderTools();renderStatus();});
+function renderOpts(){
+  const o=$('#opts');let h='';
+  if(tool==='pipe'){const ss=allowedSys();if(!ss.includes(opt.sys))opt.sys=ss[0];
+    h+=`<span class="lbl">System</span><div class="chips">${ss.map(s=>`<button class="chip" data-sys="${s}" aria-pressed="${opt.sys===s}"><span class="sw" style="background:var(--${s})"></span>${SYS[s].label}</button>`).join('')}</div>`;
+    h+=`<span class="lbl">Size</span><div class="chips">${SYS[opt.sys].sizes.map(z=>`<button class="chip" data-size="${z}" aria-pressed="${opt.size[opt.sys]===z}">${sz(z)}</button>`).join('')}</div>`;}
+  else if(tool==='slope')h+=`<span class="lbl">Fall per foot</span><div class="chips">${[0,.125,.25,.5].map(z=>`<button class="chip" data-slope="${z}" aria-pressed="${opt.slope===z}">${z?SL[z]+'″/ft':'flat'}</button>`).join('')}</div>`;
+  else if(tool==='valve'&&allowedSys().includes('hot'))h+=`<span class="lbl">Prefer</span><div class="chips">${['cold','hot'].map(s=>`<button class="chip" data-vsys="${s}" aria-pressed="${opt.valveSys===s}"><span class="sw" style="background:var(--${s})"></span>${SYS[s].label}</button>`).join('')}</div>`;
+  else if(tool==='fixture')h+=`<span class="lbl">Fixture</span><div class="chips">${['lav','kitchen','toilet','shower','tub'].map(k=>`<button class="chip" data-fx="${k}" aria-pressed="${opt.fx===k}">${FX[k].name}</button>`).join('')}</div>`;
+  h+=`<span class="note">${TOOLS[tool].note}</span>`;o.innerHTML=h;}
+$('#opts').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+  if(d.sys)opt.sys=d.sys;if(d.size)opt.size[opt.sys]=+d.size;if(d.slope!=null)opt.slope=+d.slope;if(d.fx)opt.fx=d.fx;if(d.vsys)opt.valveSys=d.vsys;renderOpts();});
+
+const ftIn=v=>{const s=v<0?'-':'+',a=Math.abs(v),f=Math.floor(a+1e-9);let i=Math.round((a-f)*12);return`${s}${f}′-${i}″`;};
+const zone=y=>y<ROOF?'above roof':y<F2?'2nd floor':y===F2?'2nd-floor framing':y<F1?'1st floor':y===F1?'1st-floor framing':y<=23?'crawlspace':'below grade';
+function renderStatus(){
+  const L=$('#statusL'),R=$('#statusR');
+  if(flash){L.innerHTML=`<b style="color:var(--err)">${flash}</b>`;}
+  else if(hover){const n=nid(hover.x,hover.y);let s=`<b>${zone(hover.y)}</b> · EL ${ftIn(F1-(hover.y+.5)+1)}`;
+    for(const sys of SYSTEMS){if(!A.adj[sys].has(n))continue;const l=A.adj[sys].get(n);const mx=Math.max(...l.map(m=>S.edges[sys].get(ek(n,m)).size));s+=` · <b style="color:var(--${sys})">${SYS[sys].label} ${sz(mx)}</b>`;
+      if(sys==='cold'||sys==='hot'){const P=(sys==='cold'?A.PC:A.PH).get(n),PS=(sys==='cold'?A.PSC:A.PSH).get(n);if(PS!=null)s+=S.waterOn?` ${Math.max(0,P).toFixed(1)} psi (static ${PS.toFixed(1)})`:` static ${PS.toFixed(1)} psi`;}
+      if(sys==='drain'&&A.dfu){const k=l.map(m=>ek(n,m)).find(k=>A.dfu.has(k));if(k)s+=` ${A.dfu.get(k)} DFU`;}}
+    const f=fxAt(hover.x,hover.y);if(f)s+=` · ${fxName(f)}`;L.innerHTML=s;}
+  else L.textContent=TOOLS[tool].note;
+  R.textContent=S.supplyOn?`Street ${S.staticPsi} psi · water ${S.waterOn?'on':'off'}`:'Supply not modeled in this lesson';}
+function renderPanels(){
+  // header & strip
+  $('#modeLessons').setAttribute('aria-pressed',mode==='lessons');$('#modeSandbox').setAttribute('aria-pressed',mode==='sandbox');
+  const wb=$('#waterBtn');wb.hidden=!S.supplyOn;wb.setAttribute('aria-pressed',S.waterOn);$('#waterTxt').textContent=S.waterOn?'Water on':'Water off';
+  $('#strip').hidden=mode!=='lessons';
+  $('#strip').innerHTML=LESSONS.map((L,i)=>`<button data-l="${i}" class="${done.has(L.key)?'done':''}" aria-current="${mode==='lessons'&&i===lessonIdx}"><span class="n">${done.has(L.key)?'✓':i+1}</span>${L.short}</button>`).join('');
+  // lesson card
+  const lc=$('#lessonCard');
+  if(mode==='lessons'){const L=lesson();const st=L.goals.map(([t,fn])=>[t,!!fn(A,S)]);const all=st.every(g=>g[1]);if(all&&!done.has(L.key)){done.add(L.key);saveDone();}
+    lc.innerHTML=`<div class="kicker">Lesson ${lessonIdx+1} of ${LESSONS.length} · ${L.kicker}</div><h2>${L.title}</h2><div class="lesson-body">${L.intro}</div>
+    <ul class="goals">${st.map(([t,m])=>`<li class="${m?'met':''}"><span class="box"></span><span>${t}</span></li>`).join('')}</ul>
+    ${showHint?`<div class="hint">${L.hint}</div>`:''}
+    ${all?`<div class="complete"><strong>Lesson complete.</strong> ${lessonIdx<LESSONS.length-1?'Ready for the next one.':'You’ve roughed in a whole house. Try the Sandbox next.'}</div>`:''}
+    <div class="row-btns">${all&&lessonIdx<LESSONS.length-1?`<button class="btn primary" data-act="next">Next lesson</button>`:''}${all&&lessonIdx===LESSONS.length-1?`<button class="btn primary" data-act="sandbox">Open Sandbox</button>`:''}<button class="btn" data-act="hint">${showHint?'Hide hint':'Show hint'}</button><button class="btn" data-act="reset">Reset lesson</button></div>`;}
+  else if(lc.dataset.mode==='sandbox'&&!rebuildSandbox){$('#psiOut').textContent=S.staticPsi+' psi';}
+  else lc.innerHTML=`<div class="kicker">Sandbox</div><h2>Free build</h2><div class="lesson-body"><p>Place fixtures, pipe them however you like and let the inspector judge. Raise street pressure past 80 psi to see why houses get a PRV.</p></div>
+    <div class="slider"><label for="psi">Street pressure <output id="psiOut">${S.staticPsi} psi</output></label><input id="psi" type="range" min="30" max="120" step="5" value="${S.staticPsi}"></div>
+    <div class="row-btns"><button class="btn primary" data-act="sample">Load sample house</button><button class="btn" data-act="clear">Clear piping</button><button class="btn" data-act="empty">Empty house</button></div>`;
+  lc.dataset.mode=mode;rebuildSandbox=false;
+  // fixtures
+  const fc=$('#fxCard'),list=S.fixtures.filter(f=>FX[f.type].q||FX[f.type].dfu);
+  const fl=f=>f.y<F2?'2nd fl.':'1st fl.';
+  const psiTxt=(r,s)=>{const o=r[s];if(o.P==null)return`<span>${s==='cold'?'C':'H'} —</span>`;const v=S.waterOn&&o.Q>0.001?Math.max(0,o.P):o.PS;const low=S.waterOn&&o.Q>0.001&&o.P<r.def.pmin;
+    return`<span class="${s==='cold'?'c':'h'}${low?' bad':''}">${s==='cold'?'C':'H'} ${v.toFixed(1)} psi${S.waterOn&&o.Q>0.001?' · '+o.Q.toFixed(2)+' gpm':''}</span>`;};
+  const dr=r=>{if(!r.drain)return'';const D=r.drain;if(D.problem)return`<span class="pill ${D.problem==='Not connected'?'warn':'err'}">${D.problem}</span>`;return`<span class="pill ok">Trapped · vented${D.armLen!=null?' · '+D.armLen+' ft arm':''}</span>`;};
+  fc.innerHTML=`<div class="card-head"><h3>Fixtures &amp; readings</h3><div class="row-btns" style="margin:0"><button class="btn" data-act="openall">Open all</button><button class="btn" data-act="closeall">Close all</button></div></div>
+   <div class="fx-list">${list.map(f=>{const r=A.fx[f.id];const isOpen=S.open.has(f.id);
+     const rd=[S.supplyOn&&r.def.q?psiTxt(r,'cold'):'',S.supplyOn&&r.def.hotFrac?psiTxt(r,'hot'):'',S.drainOn?dr(r):''].join('');
+     return`<div class="fx"><div class="nm">${fxName(f)}<small>${fl(f)} · ${r.def.dfu} DFU</small></div><button class="tog" data-fx="${f.id}" aria-pressed="${isOpen}">${isOpen?(r.running?'Running':'Open'):'Closed'}</button><div class="rd">${rd||'<span>—</span>'}</div></div>`;}).join('')}</div>
+   <p class="summary" style="margin-top:8px">Materials <b style="color:${lesson()?.budget&&A.cost.total>lesson().budget?'var(--err)':'var(--ink)'}">$${A.cost.total}</b>${lesson()?.budget?` of $${lesson().budget} budget`:''} · ${A.cost.ft} ft of pipe</p>
+   ${S.supplyOn?`<p class="summary" style="margin-top:8px">${S.waterOn?`Peak cold velocity ${A.maxVel.cold.toFixed(1)} ft/s · hot ${A.maxVel.hot.toFixed(1)} ft/s`:'Water is off: showing static pressure.'}</p>`:''}`;
+  // inspector
+  const ic=$('#inspCard');const iss=[...A.issues].sort((a,b)=>(a.sev==='err'?0:1)-(b.sev==='err'?0:1));
+  ic.innerHTML=`<div class="card-head"><h3>Inspector</h3><span class="summary">${A.errors} error${A.errors===1?'':'s'} · ${A.warns} warning${A.warns===1?'':'s'}</span></div>
+   ${iss.length?`<ul class="issues">${iss.slice(0,30).map((i,k)=>`<li class="${i.sev}"><button data-node="${i.node??''}" aria-pressed="${sel!=null&&sel===i.node}"><span class="stripe"></span><span><span class="t">${i.title}</span><span class="d">${i.detail}</span>${i.code?`<span class="code">${i.code}</span>`:''}</span></button></li>`).join('')}</ul>`:`<div class="pass"><span class="pill ok">Pass</span>No code problems found.</div>`}`;
+  renderTools();renderStatus();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act],[data-l],.tog,.issues button');if(!b)return;
+  if(b.dataset.l!=null){loadLesson(+b.dataset.l);return;}
+  if(b.classList.contains('tog')){const id=b.dataset.fx;S.open.has(id)?S.open.delete(id):S.open.add(id);recompute();return;}
+  if(b.closest('.issues')){const n=b.dataset.node;sel=n===''?null:(sel===+n?null:+n);renderPanels();return;}
+  const a=b.dataset.act;
+  if(a==='next')loadLesson(lessonIdx+1);else if(a==='sandbox')loadSandbox(false);else if(a==='hint'){showHint=!showHint;renderPanels();}else if(a==='reset')loadLesson(lessonIdx);
+  else if(a==='openall'){S.fixtures.forEach(f=>{if(FX[f.type].q||FX[f.type].dfu)S.open.add(f.id);});recompute();}
+  else if(a==='closeall'){S.open.clear();recompute();}
+  else if(a==='sample'){pushUndo();for(const s of SYSTEMS){S.edges[s].clear();S.attrs[s].clear();}S.fixtures=S.fixtures.filter(f=>FX[f.type].fixed);fullHouseFx(S);buildSample(S);recompute();}
+  else if(a==='clear'){pushUndo();for(const s of SYSTEMS){S.edges[s].clear();S.attrs[s].clear();}recompute();}
+  else if(a==='empty'){pushUndo();for(const s of SYSTEMS){S.edges[s].clear();S.attrs[s].clear();}S.fixtures=S.fixtures.filter(f=>FX[f.type].fixed);S.open.clear();recompute();}
+});
+document.addEventListener('input',e=>{if(e.target.id==='psi'){S.staticPsi=+e.target.value;recompute();}});
+
+/* ---------- boot ---------- */
+resize();
+let start=0;try{const d=JSON.parse(localStorage.getItem('roughin-done')||'[]');start=Math.min(LESSONS.length-1,LESSONS.findIndex(L=>!d.includes(L.key)));if(start<0)start=0;}catch(e){}
+loadLesson(start);
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
