@@ -484,7 +484,8 @@ before moving on.
 - **Verify:** CI smoke renders are identical before and after.
 
 ### M10+: App changes
-_TBD. To be discussed._
+- M10 deep zoom: done (see below).
+- Candidate: Littlewood fractal (see "Candidate: Littlewood fractal" at the end).
 
 ## Fixes after v1.0
 
@@ -549,3 +550,30 @@ _TBD. To be discussed._
 - Not yet: other fractals/powers, BLA (iteration skipping; 1e-20 frames take 14-22 s),
   floatexp beyond 1e-300.
 - The key-file label shows the loaded key's name.
+
+### Candidate: Littlewood fractal (not started; added 2026-10-15)
+- The roots of every polynomial whose coefficients are all +1 or -1 (Littlewood
+  polynomials), plotted as a density image like the Buddhabrot.
+  - Features: a ring between |z| = 1/2 and 2, a central hole with dragon-curve edges, black
+    holes at roots of unity, and a bright real axis.
+  - Near a point w, the edge looks like the attractor of z -> 1 +- wz, so zooms show a
+    family of Julia-like dragons.
+- A prototype in the session scratchpad (Aberth-Ehrlich root finder, 24 CPU threads)
+  rendered all degrees up to 20 in 3 s and up to 22 in 14 s at 1600x1000.
+- **Fits the app as a probabilistic (histogram) fractal**, using Buddhabrot's hit-buffer +
+  coloring path:
+  - Max iterations = max degree. Degree d adds 2^d polynomials (fix the leading coefficient
+    at +1; the roots of p and -p are the same).
+  - Only the upper half plane needs computing. Mirror it, since coefficients are real.
+  - Zoom/pan re-accumulates the hits, keeping only roots in the view. Deep views need high
+    degree (22-26), and the cost grows as 2^d * d^2.
+- **CUDA:** one polynomial per thread (Aberth in registers for d <= ~32), with atomicAdd into
+  the hit buffer, like the Buddhabrot kernel. A CPU thread path for the fallback.
+- Coloring: log density with the existing palettes. Normalize to a high percentile (~99.7%)
+  rather than the max, because the real axis would wash out everything else.
+- Keys: `fractal: "Littlewood"`, `max_degree`, view; the existing JSON fields otherwise.
+- **Verify:**
+  - The full view matches the prototype.
+  - Roots stay within 1/2 < |z| < 2.
+  - CPU and GPU histograms are equal: each polynomial's roots are deterministic, so they
+    should match exactly up to rounding at pixel edges.
